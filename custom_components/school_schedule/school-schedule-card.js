@@ -1,7 +1,7 @@
 /**
- * School Schedule Card — Ultra Premium v2
+ * School Schedule Card — Ultra Premium v3
  * 3D Glassmorphism, animated aurora background
- * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete)
+ * Features: Tagesansicht-Toggle, Inline-Verwaltung, Pausen, Ferienkalender
  */
 class SchoolScheduleCard extends HTMLElement {
   constructor() {
@@ -17,15 +17,22 @@ class SchoolScheduleCard extends HTMLElement {
     this._showForm = false;
     this._formData = null;
     this._confirmDelete = null;
+    this._holidayMode = false;
+    this._holidayData = null;
+    this._holidayLoading = false;
+    this._holidayState = localStorage.getItem("ssc_holiday_state") || "";
     this._shadow = this.attachShadow({ mode: "open" });
     this._shadow.addEventListener("click", (e) => this._handleClick(e));
     this._shadow.addEventListener("input", (e) => this._handleInput(e));
+    this._shadow.addEventListener("change", (e) => this._handleChange(e));
   }
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
     this._config = config;
     this._childName = config.child_name || "";
+    this._cardHeight = config.height || "";
+    this._columnSpan = config.column_span || 1;
     const savedView = localStorage.getItem("ssc_view_" + this._childName.toLowerCase());
     if (savedView === "week" || savedView === "day") {
       this._viewMode = savedView;
@@ -85,8 +92,8 @@ class SchoolScheduleCard extends HTMLElement {
     }
   }
 
-  _getColor(l) { return l.color || "#7c4dff"; }
-  _getIcon(l) { return l.icon || "mdi:school"; }
+  _getColor(l) { return l.color || (l.is_break ? "#607d8b" : "#7c4dff"); }
+  _getIcon(l) { return l.icon || (l.is_break ? "mdi:coffee" : "mdi:school"); }
 
   _hexToRgb(hex) {
     const r = parseInt(hex.slice(1,3), 16);
@@ -117,6 +124,9 @@ class SchoolScheduleCard extends HTMLElement {
     switch (action) {
       case "toggle-view": this._toggleViewMode(); break;
       case "toggle-edit": this._toggleEditMode(); break;
+      case "toggle-holiday": this._toggleHolidayMode(); break;
+      case "select-holiday-state": this._selectHolidayState(actionEl.dataset.state); break;
+      case "close-holiday-picker": this._closeHolidayPicker(); break;
       case "add-lesson": this._openAddForm(actionEl.dataset.weekday); break;
       case "edit-lesson": this._openEditForm(actionEl.dataset.weekday, actionEl.dataset.number); break;
       case "delete-lesson": this._requestDelete(actionEl.dataset.weekday, actionEl.dataset.number); break;
@@ -146,6 +156,30 @@ class SchoolScheduleCard extends HTMLElement {
     }
   }
 
+  _handleChange(e) {
+    if (e.target.id === "ssc-is-break") {
+      const isChecked = e.target.checked;
+      const roomField = this._shadow.querySelector("#ssc-room");
+      const teacherField = this._shadow.querySelector("#ssc-teacher");
+      const subjectLabel = this._shadow.querySelector("#ssc-subject-label");
+      const subjectInput = this._shadow.querySelector("#ssc-subject");
+      const allDaysRow = this._shadow.querySelector("#ssc-all-days-row");
+      if (isChecked) {
+        if (roomField) { roomField.value = ""; roomField.disabled = true; }
+        if (teacherField) { teacherField.value = ""; teacherField.disabled = true; }
+        if (subjectLabel) subjectLabel.textContent = "Pausenname";
+        if (subjectInput) subjectInput.placeholder = "z.B. Hofpause";
+        if (allDaysRow) allDaysRow.style.display = "flex";
+      } else {
+        if (roomField) roomField.disabled = false;
+        if (teacherField) teacherField.disabled = false;
+        if (subjectLabel) subjectLabel.textContent = "Fach *";
+        if (subjectInput) subjectInput.placeholder = "z.B. Mathematik";
+        if (allDaysRow) allDaysRow.style.display = "none";
+      }
+    }
+  }
+
   // === View / Edit Toggles ===
 
   _toggleViewMode() {
@@ -162,6 +196,50 @@ class SchoolScheduleCard extends HTMLElement {
       this._confirmDelete = null;
     }
     this._render();
+  }
+
+  _toggleHolidayMode() {
+    this._holidayMode = !this._holidayMode;
+    if (this._holidayMode && !this._holidayData && this._holidayState) {
+      this._fetchHolidays(this._holidayState);
+    }
+    this._render();
+  }
+
+  _closeHolidayPicker() {
+    this._render();
+  }
+
+  _selectHolidayState(stateSlug) {
+    this._holidayState = stateSlug;
+    localStorage.setItem("ssc_holiday_state", stateSlug);
+    this._fetchHolidays(stateSlug);
+  }
+
+  async _fetchHolidays(stateSlug) {
+    this._holidayLoading = true;
+    this._render();
+    try {
+      const year = new Date().getFullYear();
+      const resp = await fetch("https://www.mehr-schulferien.de/api/v2.1/federal-states/" + stateSlug + "/periods?year=" + year);
+      const json = await resp.json();
+      this._holidayData = (json.data || []).filter(p => p.is_school_vacation);
+      this._holidayLoading = false;
+      this._render();
+    } catch(e) {
+      this._holidayLoading = false;
+      this._holidayData = [];
+      this._render();
+    }
+  }
+
+  _isInHoliday(dateStr) {
+    if (!this._holidayData) return false;
+    const today = dateStr || new Date().toISOString().slice(0, 10);
+    for (const h of this._holidayData) {
+      if (today >= h.starts_on && today <= h.ends_on) return h;
+    }
+    return false;
   }
 
   // === Form Logic ===
@@ -202,6 +280,8 @@ class SchoolScheduleCard extends HTMLElement {
 
     const fd = this._formData;
     const isEdit = fd.mode === "edit";
+    const isBreak = this._shadow.querySelector("#ssc-is-break") ? this._shadow.querySelector("#ssc-is-break").checked : false;
+    const allDays = this._shadow.querySelector("#ssc-all-days") ? this._shadow.querySelector("#ssc-all-days").checked : false;
 
     let weekday;
     if (isEdit) {
@@ -213,8 +293,8 @@ class SchoolScheduleCard extends HTMLElement {
 
     const numberEl = this._shadow.querySelector("#ssc-number");
     const number = parseInt(numberEl ? numberEl.value : "1", 10) || 1;
-    const room = (this._shadow.querySelector("#ssc-room") || {}).value || "";
-    const teacher = (this._shadow.querySelector("#ssc-teacher") || {}).value || "";
+    const room = isBreak ? "" : ((this._shadow.querySelector("#ssc-room") || {}).value || "");
+    const teacher = isBreak ? "" : ((this._shadow.querySelector("#ssc-teacher") || {}).value || "");
     const startEl = this._shadow.querySelector("#ssc-start");
     const endEl = this._shadow.querySelector("#ssc-end");
     const start_time = startEl ? startEl.value : "08:00";
@@ -222,7 +302,7 @@ class SchoolScheduleCard extends HTMLElement {
     const colorEl = this._shadow.querySelector("#ssc-color");
     const color = colorEl ? colorEl.value : "#44739e";
     const iconEl = this._shadow.querySelector("#ssc-icon");
-    const icon = iconEl ? iconEl.value.trim() : "mdi:school";
+    const icon = iconEl ? iconEl.value.trim() : (isBreak ? "mdi:coffee" : "mdi:school");
 
     const serviceData = {
       child_name: this._childName,
@@ -235,10 +315,18 @@ class SchoolScheduleCard extends HTMLElement {
       end_time: end_time,
       color: color,
       icon: icon,
+      is_break: isBreak,
     };
 
     if (isEdit) {
       this._hass.callService("school_schedule", "update_lesson", serviceData);
+    } else if (allDays && !isEdit) {
+      // Add to all weekdays
+      const allWeekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+      for (const wd of allWeekdays) {
+        const data = Object.assign({}, serviceData, { weekday: wd });
+        this._hass.callService("school_schedule", "add_lesson", data);
+      }
     } else {
       this._hass.callService("school_schedule", "add_lesson", serviceData);
     }
@@ -306,6 +394,10 @@ class SchoolScheduleCard extends HTMLElement {
     return max + 1;
   }
 
+  _countRealLessons(lessons) {
+    return lessons.filter(l => !l.is_break).length;
+  }
+
   // === Render ===
 
   _render() {
@@ -318,7 +410,7 @@ class SchoolScheduleCard extends HTMLElement {
     const dayOrder = ["monday", "tuesday", "wednesday", "thursday", "friday"];
     let todayLessons = 0, currentLesson = null, nextLesson = null;
     if (this._today) {
-      todayLessons = this._today.lessons.length;
+      todayLessons = this._countRealLessons(this._today.lessons);
       currentLesson = this._today.current;
       nextLesson = this._today.next;
     }
@@ -377,8 +469,13 @@ class SchoolScheduleCard extends HTMLElement {
     const viewBtnIcon = this._viewMode === "week" ? "mdi:calendar-day" : "mdi:calendar-week";
     const editBtnText = this._editMode ? "Fertig" : "Bearbeiten";
     const editBtnIcon = this._editMode ? "mdi:check" : "mdi:pencil";
+    const holidayBtnActive = this._holidayMode ? " ssc-btn-active" : "";
+    const holidayBtnIcon = "mdi:beach";
 
     const actionsHtml = '<div class="ssc-actions">' +
+      '<button class="ssc-btn' + holidayBtnActive + '" data-action="toggle-holiday" title="Ferienkalender">' +
+        '<ha-icon icon="' + holidayBtnIcon + '" style="--mdc-icon-size:16px"></ha-icon>' +
+      '</button>' +
       '<button class="ssc-btn" data-action="toggle-view">' +
         '<ha-icon icon="' + viewBtnIcon + '" style="--mdc-icon-size:16px"></ha-icon>' +
         '<span>' + viewBtnText + '</span>' +
@@ -391,7 +488,9 @@ class SchoolScheduleCard extends HTMLElement {
 
     // --- Main content ---
     let contentHtml = "";
-    if (this._viewMode === "day") {
+    if (this._holidayMode) {
+      contentHtml = this._renderHolidayView(dayOrder);
+    } else if (this._viewMode === "day") {
       contentHtml = this._renderDayView(currentLesson);
     } else {
       contentHtml = this._renderWeekView(dayOrder, currentLesson);
@@ -402,10 +501,11 @@ class SchoolScheduleCard extends HTMLElement {
     const confirmHtml = this._renderConfirmDelete();
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
+    const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
 
     this._shadow.innerHTML =
       '<style>' + this._styles() + '</style>' +
-      '<ha-card class="' + cardClass + '">' +
+      '<ha-card class="' + cardClass + '"' + heightStyle + '>' +
         '<div class="aurora"></div>' +
         '<div class="aurora aurora2"></div>' +
         '<div class="content">' +
@@ -420,7 +520,7 @@ class SchoolScheduleCard extends HTMLElement {
             actionsHtml +
           '</div>' +
           heroHtml +
-          contentHtml +
+          '<div class="content-scroll">' + contentHtml + '</div>' +
         '</div>' +
         formHtml +
         confirmHtml +
@@ -428,6 +528,7 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _renderLessonCard(lesson, isCurrent, isToday, day) {
+    const isBreak = lesson.is_break || false;
     const color = this._getColor(lesson);
     const isDark = this._luminance(color) < 0.5;
     const textColor = isDark ? "#fff" : "#1a1a2e";
@@ -439,10 +540,13 @@ class SchoolScheduleCard extends HTMLElement {
 
     let cls = "lc";
     if (isCurrent) cls += " lc-now";
+    if (isBreak) cls += " lc-break";
 
     let details = "";
-    if (lesson.room) details += '<span class="lc-room">' + lesson.room + '</span>';
-    if (lesson.teacher) details += '<span class="lc-teacher">' + lesson.teacher + '</span>';
+    if (!isBreak) {
+      if (lesson.room) details += '<span class="lc-room">' + lesson.room + '</span>';
+      if (lesson.teacher) details += '<span class="lc-teacher">' + lesson.teacher + '</span>';
+    }
 
     let editBtns = "";
     if (this._editMode) {
@@ -456,10 +560,14 @@ class SchoolScheduleCard extends HTMLElement {
       '</div>';
     }
 
+    const iconHtml = isBreak
+      ? '<div class="lc-break-icon"><ha-icon icon="' + this._getIcon(lesson) + '" style="--mdc-icon-size:18px"></ha-icon></div>'
+      : '<div class="lc-num">' + lessonNum + '</div>';
+
     return '<div class="' + cls + '" style="--c:' + color + ';--c05:' + c05 + ';--c10:' + c10 + ';--c20:' + c20 + ';--c30:' + c30 + ';--ctext:' + textColor + '">' +
       '<div class="lc-rail"></div>' +
       '<div class="lc-content">' +
-        '<div class="lc-num">' + lessonNum + '</div>' +
+        iconHtml +
         '<div class="lc-info">' +
           '<div class="lc-subject">' + lesson.subject + '</div>' +
           '<div class="lc-time">' + (lesson.start_time || "").slice(0,5) + " - " + (lesson.end_time || "").slice(0,5) + '</div>' +
@@ -482,11 +590,11 @@ class SchoolScheduleCard extends HTMLElement {
     for (const day of dayOrder) {
       const dd = this._days[day] || { lessons: [], label: day.slice(0,2), full: day };
       const isToday = day === this._todayKey;
-      const count = dd.lessons.length;
+      const count = this._countRealLessons(dd.lessons);
 
       let dayClass = "day";
       if (isToday) dayClass += " day-active";
-      if (count === 0) dayClass += " day-empty";
+      if (count === 0 && dd.lessons.length === 0) dayClass += " day-empty";
 
       let headerHtml = '<div class="day-header' + (isToday ? " dh-active" : "") + '">' +
         '<span class="day-label">' + dd.label + '</span>' +
@@ -518,7 +626,7 @@ class SchoolScheduleCard extends HTMLElement {
     const todayFull = dayFullNames[this._todayKey] || "Heute";
 
     const lessons = this._today ? this._today.lessons : [];
-    const count = lessons.length;
+    const count = this._countRealLessons(lessons);
     const day = this._todayKey;
 
     let headerHtml = '<div class="day-header dh-active">' +
@@ -545,6 +653,113 @@ class SchoolScheduleCard extends HTMLElement {
     return '<div class="grid day-view"><div class="day day-active">' + headerHtml + bodyHtml + '</div></div>';
   }
 
+  _renderHolidayView(dayOrder) {
+    if (this._holidayLoading) {
+      return '<div class="holiday-loading"><ha-spin></ha-spin><div>Ferien werden geladen...</div></div>';
+    }
+
+    const stateSlug = this._holidayState;
+    if (!stateSlug) {
+      return this._renderHolidayPicker();
+    }
+
+    if (!this._holidayData || this._holidayData.length === 0) {
+      return '<div class="holiday-empty">' +
+        '<ha-icon icon="mdi:beach" style="--mdc-icon-size:32px;color:var(--secondary-text-color,rgba(255,255,255,0.3))"></ha-icon>' +
+        '<div>Keine Feriendaten verf\u00fcgbar</div>' +
+      '</div>';
+    }
+
+    // Check if currently in holiday
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const currentHoliday = this._isInHoliday(todayStr);
+
+    let html = '<div class="holiday-view">';
+
+    if (currentHoliday) {
+      html += '<div class="holiday-current">' +
+        '<ha-icon icon="mdi:beach" style="--mdc-icon-size:28px;color:#ff9800"></ha-icon>' +
+        '<div class="holiday-current-text">' +
+          '<div class="holiday-current-name">' + currentHoliday.name + '</div>' +
+          '<div class="holiday-current-dates">' + currentHoliday.starts_on + " bis " + currentHoliday.ends_on + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    html += '<div class="holiday-list">';
+    for (const h of this._holidayData) {
+      const isCurrent = h === currentHoliday;
+      html += '<div class="holiday-item' + (isCurrent ? " holiday-item-active" : "") + '">' +
+        '<div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:18px"></ha-icon></div>' +
+        '<div class="holiday-item-info">' +
+          '<div class="holiday-item-name">' + h.name + '</div>' +
+          '<div class="holiday-item-dates">' + this._formatDate(h.starts_on) + " \u2013 " + this._formatDate(h.ends_on) + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    html += '</div>';
+
+    // Also show today's schedule if not in holiday
+    if (!currentHoliday) {
+      html += '<div class="holiday-schedule-title">Stunden heute:</div>';
+      const lessons = this._today ? this._today.lessons : [];
+      if (lessons.length === 0) {
+        html += '<div class="no-lesson"><span class="no-lesson-line"></span></div>';
+      } else {
+        html += '<div class="day-body">';
+        for (const lesson of lessons) {
+          const isCurrent = this._today && this._today.current && parseInt(this._today.current.lesson_number) === parseInt(lesson.lesson_number);
+          html += this._renderLessonCard(lesson, isCurrent, true, this._todayKey);
+        }
+        html += '</div>';
+      }
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  _renderHolidayPicker() {
+    const states = [
+      {slug: "baden-wuerttemberg", name: "Baden-W\u00fcrttemberg"},
+      {slug: "bayern", name: "Bayern"},
+      {slug: "berlin", name: "Berlin"},
+      {slug: "brandenburg", name: "Brandenburg"},
+      {slug: "bremen", name: "Bremen"},
+      {slug: "hamburg", name: "Hamburg"},
+      {slug: "hessen", name: "Hessen"},
+      {slug: "mecklenburg-vorpommern", name: "Mecklenburg-Vorpommern"},
+      {slug: "niedersachsen", name: "Niedersachsen"},
+      {slug: "nordrhein-westfalen", name: "Nordrhein-Westfalen"},
+      {slug: "rheinland-pfalz", name: "Rheinland-Pfalz"},
+      {slug: "saarland", name: "Saarland"},
+      {slug: "sachsen", name: "Sachsen"},
+      {slug: "sachsen-anhalt", name: "Sachsen-Anhalt"},
+      {slug: "schleswig-holstein", name: "Schleswig-Holstein"},
+      {slug: "thueringen", name: "Th\u00fcringen"},
+    ];
+
+    let html = '<div class="holiday-picker">' +
+      '<div class="holiday-picker-title">Bundesland w\u00e4hlen</div>' +
+      '<div class="holiday-picker-grid">';
+
+    for (const s of states) {
+      const isActive = s.slug === this._holidayState;
+      html += '<button class="holiday-state-btn' + (isActive ? " holiday-state-active" : "") + '" data-action="select-holiday-state" data-state="' + s.slug + '">' + s.name + '</button>';
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  _formatDate(dateStr) {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      return parts[2] + "." + parts[1] + "." + parts[0];
+    }
+    return dateStr;
+  }
+
   _renderForm() {
     if (!this._showForm || !this._formData) return "";
     const fd = this._formData;
@@ -554,6 +769,7 @@ class SchoolScheduleCard extends HTMLElement {
     const weekday = fd.weekday;
     const dayName = dayFullNames[weekday] || weekday;
     const nextNum = isEdit ? (parseInt(lesson.lesson_number) || 1) : this._getNextLessonNumber(weekday);
+    const isBreakVal = lesson.is_break || false;
 
     let weekdayField;
     if (isEdit) {
@@ -579,18 +795,18 @@ class SchoolScheduleCard extends HTMLElement {
     const teacher = lesson.teacher || "";
     const startT = (lesson.start_time || "08:00").slice(0,5);
     const endT = (lesson.end_time || "08:45").slice(0,5);
-    const colorV = lesson.color || "#44739e";
-    const iconV = lesson.icon || "mdi:school";
+    const colorV = lesson.color || (isBreakVal ? "#607d8b" : "#44739e");
+    const iconV = lesson.icon || (isBreakVal ? "mdi:coffee" : "mdi:school");
 
     return '<div class="ssc-modal-overlay" data-action="cancel-form-bg">' +
       '<div class="ssc-form-card">' +
-        '<div class="ssc-form-title">' + (isEdit ? "Stunde bearbeiten" : "Stunde hinzuf\u00fcgen") + '</div>' +
+        '<div class="ssc-form-title">' + (isEdit ? "Eintrag bearbeiten" : "Eintrag hinzuf\u00fcgen") + '</div>' +
         '<div class="ssc-form-day">' + dayName + '</div>' +
         '<div class="ssc-form-fields">' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field" style="flex:2">' +
-              '<span class="ssc-field-label">Fach *</span>' +
-              '<input class="ssc-input" type="text" id="ssc-subject" value="' + subj + '" placeholder="z.B. Mathematik" />' +
+              '<span class="ssc-field-label" id="ssc-subject-label">' + (isBreakVal ? "Pausenname" : "Fach *") + '</span>' +
+              '<input class="ssc-input" type="text" id="ssc-subject" value="' + subj + '" placeholder="' + (isBreakVal ? "z.B. Hofpause" : "z.B. Mathematik") + '" />' +
             '</div>' +
             '<div class="ssc-field" style="flex:0 0 80px;max-width:80px">' +
               '<span class="ssc-field-label">Stunde</span>' +
@@ -600,28 +816,28 @@ class SchoolScheduleCard extends HTMLElement {
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">Startzeit</span>' +
-              '<input class="ssc-input" type="time" id="ssc-start" value="' + startT + '" />' +
+              '<input class="ssc-input" type="time" id="ssc-start" value="' + startT + '"' + (isBreakVal ? " disabled" : "") + ' />' +
             '</div>' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">Endzeit</span>' +
-              '<input class="ssc-input" type="time" id="ssc-end" value="' + endT + '" />' +
+              '<input class="ssc-input" type="time" id="ssc-end" value="' + endT + '"' + (isBreakVal ? " disabled" : "") + ' />' +
             '</div>' +
           '</div>' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">Raum</span>' +
-              '<input class="ssc-input" type="text" id="ssc-room" value="' + room + '" placeholder="z.B. R204" />' +
+              '<input class="ssc-input" type="text" id="ssc-room" value="' + room + '" placeholder="z.B. R204"' + (isBreakVal ? " disabled" : "") + ' />' +
             '</div>' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">Lehrer</span>' +
-              '<input class="ssc-input" type="text" id="ssc-teacher" value="' + teacher + '" placeholder="z.B. M\u00fcller" />' +
+              '<input class="ssc-input" type="text" id="ssc-teacher" value="' + teacher + '" placeholder="z.B. M\u00fcller"' + (isBreakVal ? " disabled" : "") + ' />' +
             '</div>' +
           '</div>' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">Farbe</span>' +
               '<div class="ssc-color-row">' +
-                '<input class="ssc-color-input" type="color" id="ssc-color" value="' + colorV + '" />' +
+                '<input class="ssc-color-input" type="color" id="ssc-color" value="' + colorV + '"' + (isBreakVal ? " disabled" : "") + ' />' +
                 '<span class="ssc-color-hex" id="ssc-color-hex">' + colorV + '</span>' +
               '</div>' +
             '</div>' +
@@ -633,6 +849,18 @@ class SchoolScheduleCard extends HTMLElement {
               '</div>' +
             '</div>' +
           '</div>' +
+          '<div class="ssc-field ssc-break-field">' +
+            '<label class="ssc-checkbox-row">' +
+              '<input type="checkbox" id="ssc-is-break"' + (isBreakVal ? " checked" : "") + (isEdit ? " disabled" : "") + ' />' +
+              '<span class="ssc-checkbox-label">Als Pause markieren</span>' +
+            '</label>' +
+          '</div>' +
+          (isEdit ? "" : '<div class="ssc-field ssc-all-days-field" id="ssc-all-days-row" style="display:' + (isBreakVal ? "flex" : "none") + '">' +
+            '<label class="ssc-checkbox-row">' +
+              '<input type="checkbox" id="ssc-all-days" />' +
+              '<span class="ssc-checkbox-label">F\u00fcr alle Wochentage eintragen</span>' +
+            '</label>' +
+          '</div>') +
         '</div>' +
         '<div class="ssc-form-buttons">' +
           '<button class="ssc-btn" data-action="cancel-form">Abbrechen</button>' +
@@ -650,7 +878,7 @@ class SchoolScheduleCard extends HTMLElement {
         '<div class="ssc-confirm-icon">' +
           '<ha-icon icon="mdi:trash-can" style="--mdc-icon-size:36px;color:#f44336"></ha-icon>' +
         '</div>' +
-        '<div class="ssc-confirm-text">Stunde l\u00f6schen?</div>' +
+        '<div class="ssc-confirm-text">Eintrag l\u00f6schen?</div>' +
         '<div class="ssc-confirm-subject">' + (cd.subject || "Unbenannt") + '</div>' +
         '<div class="ssc-confirm-sub">' + (cd.dayName || "") + ", " + cd.start_time + " - " + cd.end_time + '</div>' +
         '<div class="ssc-form-buttons">' +
@@ -709,12 +937,23 @@ class SchoolScheduleCard extends HTMLElement {
       .content {
         position: relative; z-index: 1; width: 100%; max-width: 100%;
         padding: 16px 12px 14px;
+        display: flex; flex-direction: column;
+        max-height: var(--ssc-max-height, none);
       }
+
+      /* === Content scroll area === */
+      .content-scroll {
+        flex: 1; overflow-y: auto; overflow-x: hidden;
+        min-height: 0;
+      }
+      .content-scroll::-webkit-scrollbar { width: 6px; }
+      .content-scroll::-webkit-scrollbar-track { background: transparent; }
+      .content-scroll::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--primary-color, #7c4dff) 20%, transparent); border-radius: 3px; }
 
       /* === Title === */
       .title-row {
         display: flex; align-items: center; gap: 14px;
-        margin-bottom: 16px;
+        margin-bottom: 16px; flex-shrink: 0;
       }
       .title-icon {
         width: 44px; height: 44px; border-radius: 14px;
@@ -748,12 +987,11 @@ class SchoolScheduleCard extends HTMLElement {
         color: var(--primary-text-color, #fff);
         font-size: 0.72em; font-weight: 700;
         cursor: pointer; white-space: nowrap;
-        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
       }
       .ssc-btn:hover {
-        transform: translateY(-2px);
-        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 30%, transparent);
-        box-shadow: 0 6px 20px color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 35%, transparent);
+        box-shadow: 0 4px 16px color-mix(in srgb, var(--primary-color, #7c4dff) 12%, transparent);
       }
       .ssc-btn-active {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
@@ -769,13 +1007,13 @@ class SchoolScheduleCard extends HTMLElement {
         color: #f44336;
       }
       .ssc-btn-danger:hover {
-        box-shadow: 0 6px 20px color-mix(in srgb, #f44336 15%, transparent);
+        box-shadow: 0 4px 16px color-mix(in srgb, #f44336 15%, transparent);
       }
 
       /* === Hero summary === */
       .hero {
         display: flex; gap: 10px; margin-bottom: 16px;
-        flex-wrap: wrap; width: 100%;
+        flex-wrap: wrap; width: 100%; flex-shrink: 0;
       }
       .hero-stat {
         display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -856,10 +1094,10 @@ class SchoolScheduleCard extends HTMLElement {
         color: var(--secondary-text-color, rgba(255,255,255,0.4));
       }
 
-      /* === Day grid === */
+      /* === Day grid — auto-fill columns === */
       .grid {
         display: grid; width: 100%;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 7px;
       }
       .day {
@@ -868,11 +1106,11 @@ class SchoolScheduleCard extends HTMLElement {
         background: color-mix(in srgb, var(--card-background-color, #111118) 40%, transparent);
         backdrop-filter: blur(8px);
         border: 1px solid color-mix(in srgb, var(--divider-color, rgba(255,255,255,0.06)) 60%, transparent);
-        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s, box-shadow 0.3s;
+        transition: border-color 0.2s, box-shadow 0.2s;
       }
       .day:hover {
-        transform: translateY(-3px);
         border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 20%, transparent);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
       }
       .day-active {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 6%, transparent);
@@ -928,19 +1166,44 @@ class SchoolScheduleCard extends HTMLElement {
         text-transform: uppercase; letter-spacing: 0.1em;
       }
 
-      /* === Lesson card === */
+      /* === Lesson card — NO transform on hover (fixes zappeln) === */
       .lc {
         display: flex; position: relative;
         border-radius: 12px; overflow: visible;
         background: var(--c05, transparent);
         border: 1px solid color-mix(in srgb, var(--divider-color, rgba(255,255,255,0.05)) 50%, transparent);
-        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         cursor: default;
       }
       .lc:hover {
-        transform: translateY(-3px) scale(1.02);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.25), 0 0 12px var(--c20, transparent);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 8px var(--c20, transparent);
         border-color: var(--c30, transparent);
+        background: var(--c10, transparent);
+      }
+
+      /* === Break card === */
+      .lc-break {
+        background: color-mix(in srgb, #607d8b 8%, transparent);
+        border-style: dashed;
+        border-color: color-mix(in srgb, #607d8b 25%, transparent);
+      }
+      .lc-break:hover {
+        background: color-mix(in srgb, #607d8b 12%, transparent);
+        border-color: color-mix(in srgb, #607d8b 40%, transparent);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      .lc-break .lc-rail {
+        background: linear-gradient(180deg, #607d8b 0%, #607d8b 30%, rgba(96,125,139,0.2) 100%);
+        box-shadow: 0 0 8px rgba(96,125,139,0.2);
+      }
+      .lc-break-icon {
+        display: flex; align-items: center; justify-content: center;
+        padding-top: 2px; min-width: 18px;
+        color: #607d8b; opacity: 0.7;
+      }
+      .lc-break .lc-subject {
+        color: var(--secondary-text-color, rgba(255,255,255,0.6));
+        font-style: italic;
       }
 
       .lc-now {
@@ -1005,11 +1268,11 @@ class SchoolScheduleCard extends HTMLElement {
         background: color-mix(in srgb, var(--card-background-color, #111118) 85%, transparent);
         border: 1px solid color-mix(in srgb, var(--c, #7c4dff) 20%, transparent);
         cursor: pointer; padding: 0;
-        transition: all 0.2s;
+        transition: border-color 0.2s, background 0.2s;
       }
       .lc-edit-btn:hover {
-        transform: scale(1.15);
         border-color: var(--c, #7c4dff);
+        background: color-mix(in srgb, var(--c, #7c4dff) 10%, transparent);
       }
       .lc-edit-btn ha-icon {
         --mdc-icon-size: 13px;
@@ -1026,11 +1289,10 @@ class SchoolScheduleCard extends HTMLElement {
         border: 1px dashed color-mix(in srgb, var(--primary-color, #7c4dff) 25%, transparent);
         background: transparent;
         cursor: pointer; width: 100%;
-        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition: background 0.2s, border-color 0.2s;
       }
       .lc-add:hover {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 8%, transparent);
-        transform: translateY(-2px);
         border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 40%, transparent);
       }
       .lc-add ha-icon {
@@ -1054,6 +1316,99 @@ class SchoolScheduleCard extends HTMLElement {
       .grid.day-view .lc-room, .grid.day-view .lc-teacher { font-size: 0.63em; }
       .grid.day-view .lc-num { font-size: 0.7em; }
       .grid.day-view .day-label { font-size: 0.9em; }
+
+      /* === Holiday view === */
+      .holiday-loading {
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        padding: 40px 16px;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+      }
+      .holiday-empty {
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+        padding: 40px 16px;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+      }
+      .holiday-picker {
+        padding: 12px 4px;
+      }
+      .holiday-picker-title {
+        font-size: 0.9em; font-weight: 700;
+        color: var(--primary-text-color, #fff);
+        margin-bottom: 12px;
+      }
+      .holiday-picker-grid {
+        display: grid; gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      }
+      .holiday-state-btn {
+        padding: 10px 14px; border-radius: 12px;
+        background: color-mix(in srgb, var(--card-background-color, #111118) 60%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
+        color: var(--primary-text-color, #fff);
+        font-size: 0.75em; font-weight: 600;
+        cursor: pointer; text-align: left;
+        transition: border-color 0.2s, background 0.2s;
+      }
+      .holiday-state-btn:hover {
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 35%, transparent);
+      }
+      .holiday-state-active {
+        background: color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 40%, transparent);
+      }
+      .holiday-view {
+        padding: 4px 0;
+      }
+      .holiday-current {
+        display: flex; align-items: center; gap: 12px;
+        padding: 16px; border-radius: 16px; margin-bottom: 16px;
+        background: color-mix(in srgb, #ff9800 12%, transparent);
+        border: 1px solid color-mix(in srgb, #ff9800 30%, transparent);
+      }
+      .holiday-current-text { display: flex; flex-direction: column; }
+      .holiday-current-name {
+        font-size: 1em; font-weight: 800;
+        color: #ff9800;
+      }
+      .holiday-current-dates {
+        font-size: 0.72em; font-weight: 600;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+      }
+      .holiday-list {
+        display: flex; flex-direction: column; gap: 8px;
+      }
+      .holiday-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 14px; border-radius: 12px;
+        background: color-mix(in srgb, var(--card-background-color, #111118) 40%, transparent);
+        border: 1px solid color-mix(in srgb, var(--divider-color, rgba(255,255,255,0.06)) 60%, transparent);
+        transition: border-color 0.2s;
+      }
+      .holiday-item:hover {
+        border-color: color-mix(in srgb, #ff9800 25%, transparent);
+      }
+      .holiday-item-active {
+        background: color-mix(in srgb, #ff9800 10%, transparent);
+        border-color: color-mix(in srgb, #ff9800 30%, transparent);
+      }
+      .holiday-item-icon {
+        color: #ff9800; opacity: 0.7; display: flex; align-items: center;
+      }
+      .holiday-item-info { display: flex; flex-direction: column; }
+      .holiday-item-name {
+        font-size: 0.82em; font-weight: 700;
+        color: var(--primary-text-color, #fff);
+      }
+      .holiday-item-dates {
+        font-size: 0.65em; font-weight: 500;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+      }
+      .holiday-schedule-title {
+        font-size: 0.8em; font-weight: 700;
+        color: var(--secondary-text-color, rgba(255,255,255,0.5));
+        margin-top: 16px; margin-bottom: 8px;
+        text-transform: uppercase; letter-spacing: 0.08em;
+      }
 
       /* === Modal overlay === */
       .ssc-modal-overlay {
@@ -1139,6 +1494,7 @@ class SchoolScheduleCard extends HTMLElement {
         width: 44px; height: 36px; border: none; border-radius: 10px;
         background: transparent; cursor: pointer; padding: 0;
       }
+      .ssc-color-input:disabled { opacity: 0.5; cursor: not-allowed; }
       .ssc-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
       .ssc-color-input::-webkit-color-swatch { border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent); border-radius: 8px; }
       .ssc-color-input::-moz-color-swatch { border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent); border-radius: 8px; }
@@ -1151,6 +1507,23 @@ class SchoolScheduleCard extends HTMLElement {
         display: flex; align-items: center; gap: 8px;
       }
       .ssc-icon-row .ssc-input { flex: 1; }
+
+      .ssc-break-field, .ssc-all-days-field {
+        margin-top: 4px;
+      }
+      .ssc-checkbox-row {
+        display: flex; align-items: center; gap: 8px;
+        cursor: pointer;
+      }
+      .ssc-checkbox-row input[type="checkbox"] {
+        width: 18px; height: 18px; border-radius: 5px;
+        accent-color: var(--primary-color, #7c4dff);
+        cursor: pointer;
+      }
+      .ssc-checkbox-label {
+        font-size: 0.78em; font-weight: 600;
+        color: var(--primary-text-color, #fff);
+      }
 
       .ssc-form-buttons {
         display: flex; gap: 10px; justify-content: flex-end;
@@ -1180,7 +1553,7 @@ class SchoolScheduleCard extends HTMLElement {
       }
 
       @media (max-width: 600px) {
-        .grid { gap: 3px; }
+        .grid { gap: 3px; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
         .day { padding: 6px 3px 8px; }
         .lc-content { padding: 6px 6px; }
         .lc-subject { font-size: 0.68em; }
@@ -1191,6 +1564,7 @@ class SchoolScheduleCard extends HTMLElement {
         .ssc-btn { padding: 6px 10px; font-size: 0.6em; }
         .grid.day-view .lc-content { padding: 8px 10px; }
         .grid.day-view .lc-subject { font-size: 0.78em; }
+        .holiday-picker-grid { grid-template-columns: 1fr; }
       }
     `;
   }
@@ -1202,6 +1576,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium",
+  description: "Stundenplan-Karte Ultra Premium v3",
   preview: false,
 });

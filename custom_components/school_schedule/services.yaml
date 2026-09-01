@@ -86,6 +86,14 @@ add_lesson:
       example: "mdi:school"
       selector:
         text:
+    is_break:
+      name: Pause
+      description: Wenn true, wird dieser Eintrag als Pause markiert (kein Raum, kein Lehrer, zählt nicht als Stunde).
+      required: false
+      example: false
+      default: false
+      selector:
+        boolean:
 
 remove_lesson:
   name: Stunde entfernen
@@ -215,6 +223,13 @@ update_lesson:
       example: "mdi:book"
       selector:
         text:
+    is_break:
+      name: Pause
+      description: Wenn true, wird dieser Eintrag als Pause markiert.
+      required: false
+      example: false
+      selector:
+        boolean:
 
 get_schedule:
   name: Stundenplan abrufen
