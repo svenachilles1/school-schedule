@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifest.json
+        run: |
+          python3 -c "
+          import json
+          with open('custom_components/school_schedule/manifest.json') as f:
+              m = json.load(f)
+          required = ['domain', 'name', 'version', 'documentation', 'issue_tracker', 'codeowners', 'config_flow', 'integration_type', 'iot_class']
+          for key in required:
+              assert key in m, f'Missing required key: {key}'
+          print('manifest.json valid ✅')
+          "
+      - name: Validate hacs.json
+        run: |
+          python3 -c "
+          import json
+          with open('hacs.json') as f:
+              h = json.load(f)
+          required = ['name', 'render_readme', 'filename']
+          for key in required:
+              assert key in h, f'Missing required key: {key}'
+          print('hacs.json valid ✅')
+          "
+      - name: Validate JS syntax
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nodejs > /dev/null 2>&1
+          node --check school-schedule-card.js
+          echo "JS syntax valid ✅"
+      - name: Python syntax check
+        run: |
+          python3 -c "
+          import py_compile, os
+          for root, dirs, files in os.walk('custom_components/school_schedule'):
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      py_compile.compile(path, doraise=True)
+                      print(f'  {f} OK')
+          print('Python syntax valid ✅')
+          "

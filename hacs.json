@@ -1,0 +1,8 @@
+{
+  "name": "School Schedule",
+  "render_readme": true,
+  "filename": "school-schedule-card.js",
+  "domains": ["sensor"],
+  "iot_class": "local_push",
+  "homeassistant": "2024.1.0"
+}

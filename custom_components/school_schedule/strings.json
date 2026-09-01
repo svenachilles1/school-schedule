@@ -1,0 +1,93 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "School Schedule",
+        "description": "Richte einen neuen Stundenplan ein.",
+        "data": {
+          "child_name": "Name des Kindes"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Für dieses Kind existiert bereits ein Stundenplan."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Stundenplan verwalten",
+        "description": "Wähle eine Aktion für den Stundenplan.",
+        "data": {
+          "action": "Aktion"
+        }
+      },
+      "add_lesson": {
+        "title": "Stunde hinzufügen",
+        "description": "Füge eine neue Stunde zum Stundenplan hinzu.",
+        "data": {
+          "weekday": "Wochentag",
+          "lesson_number": "Stundennummer",
+          "subject": "Fach",
+          "room": "Raum",
+          "teacher": "Lehrer",
+          "start_time": "Startzeit (HH:MM)",
+          "end_time": "Endzeit (HH:MM)",
+          "color": "Farbe (Hex)",
+          "icon": "Icon (mdi:)"
+        }
+      },
+      "remove_lesson": {
+        "title": "Stunde entfernen",
+        "description": "Wähle die zu entfernende Stunde.",
+        "data": {
+          "lesson_index": "Stunde auswählen"
+        }
+      },
+      "edit_lesson": {
+        "title": "Stunde bearbeiten",
+        "description": "Wähle die zu bearbeitende Stunde.",
+        "data": {
+          "lesson_index": "Stunde auswählen",
+          "weekday": "Wochentag",
+          "lesson_number": "Stundennummer",
+          "subject": "Fach",
+          "room": "Raum",
+          "teacher": "Lehrer",
+          "start_time": "Startzeit (HH:MM)",
+          "end_time": "Endzeit (HH:MM)",
+          "color": "Farbe (Hex)",
+          "icon": "Icon (mdi:)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "action": {
+      "options": {
+        "add": "Stunde hinzufügen",
+        "edit": "Stunde bearbeiten",
+        "remove": "Stunde entfernen",
+        "view": "Stundenplan ansehen"
+      }
+    }
+  },
+  "services": {
+    "add_lesson": {
+      "name": "Stunde hinzufügen",
+      "description": "Fügt eine Stunde zum Stundenplan hinzu."
+    },
+    "remove_lesson": {
+      "name": "Stunde entfernen",
+      "description": "Entfernt eine Stunde aus dem Stundenplan."
+    },
+    "update_lesson": {
+      "name": "Stunde aktualisieren",
+      "description": "Aktualisiert eine bestehende Stunde."
+    },
+    "get_schedule": {
+      "name": "Stundenplan abrufen",
+      "description": "Ruft den Stundenplan für einen Wochentag ab."
+    }
+  }
+}
