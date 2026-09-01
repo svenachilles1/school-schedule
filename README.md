@@ -70,7 +70,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 ```yaml
 service: school_schedule.add_lesson
 data:
-  child_name: Emma
+  child_name: your_child
   weekday: monday
   lesson_number: 1
   subject: Mathematik
