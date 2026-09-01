@@ -315,8 +315,10 @@ class SchoolScheduleCard extends HTMLElement {
       end_time: end_time,
       color: color,
       icon: icon,
-      is_break: isBreak,
     };
+    if (isBreak) {
+      serviceData.is_break = true;
+    }
 
     if (isEdit) {
       this._hass.callService("school_schedule", "update_lesson", serviceData);
@@ -506,7 +508,7 @@ class SchoolScheduleCard extends HTMLElement {
 
     this._shadow.innerHTML =
       '<style>' + this._styles() + '</style>' +
-      '<ha-card class="' + cardClass + '"' + heightStyle + '>'
+      '<ha-card class="' + cardClass + '"' + heightStyle + '>' +
         '<div class="aurora"></div>' +
         '<div class="aurora aurora2"></div>' +
         '<div class="content"' + widthStyle + '>' +
@@ -891,6 +893,19 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   // === Styles ===
+
+  static getConfigElement() {
+    return document.createElement("school-schedule-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      type: "custom:school-schedule-card",
+      child_name: "Michelle",
+      height: "",
+      width: "",
+    };
+  }
 
   _styles() {
     return `
@@ -1578,6 +1593,7 @@ class SchoolScheduleCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._hass = null;
+    if (this._shadow) return; // Only build once — prevents focus loss
     this._shadow = this.attachShadow({ mode: "open" });
     this._shadow.innerHTML = `
       <style>
@@ -1596,12 +1612,12 @@ class SchoolScheduleCardEditor extends HTMLElement {
         <div>
           <div class="ssc-editor-label">Name des Kindes</div>
           <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._config.child_name || ""}" placeholder="z.B. Michelle" />
-          <div class="ssc-editor-hint">Muss mit dem Namen in der Integration übereinstimmen</div>
+          <div class="ssc-editor-hint">Muss mit dem Namen in der Integration uebereinstimmen</div>
         </div>
         <div>
-          <div class="ssc-editor-label">Höhe der Karte</div>
+          <div class="ssc-editor-label">Hoehe der Karte</div>
           <input class="ssc-editor-input" id="ssc-edit-height" type="text" value="${this._config.height || ""}" placeholder="z.B. 500px (leer = automatisch)" />
-          <div class="ssc-editor-hint">Feste Höhe mit Scrollbar, z.B. 500px. Leer = wächst mit Inhalt</div>
+          <div class="ssc-editor-hint">Feste Hoehe mit Scrollbar, z.B. 500px. Leer = waechst mit Inhalt</div>
         </div>
         <div>
           <div class="ssc-editor-label">Maximale Breite</div>
@@ -1620,12 +1636,11 @@ class SchoolScheduleCardEditor extends HTMLElement {
           height: this._shadow.querySelector("#ssc-edit-height").value,
           width: this._shadow.querySelector("#ssc-edit-width").value,
         };
-        const event = new CustomEvent("config-changed", {
+        this.dispatchEvent(new CustomEvent("config-changed", {
           detail: { config: this._config },
           bubbles: true,
           composed: true,
-        });
-        this.dispatchEvent(event);
+        }));
       });
     });
   }
@@ -1641,15 +1656,4 @@ window.customCards.push({
   name: "School Schedule Card",
   description: "Stundenplan-Karte Ultra Premium v3",
   preview: false,
-  getConfigElement: function() {
-    return document.createElement("school-schedule-card-editor");
-  },
-  getStubConfig: function() {
-    return {
-      type: "custom:school-schedule-card",
-      child_name: "Michelle",
-      height: "",
-      width: "",
-    };
-  },
 });
