@@ -28,7 +28,7 @@ jobs:
           import json
           with open('hacs.json') as f:
               h = json.load(f)
-          required = ['name', 'render_readme', 'filename']
+          required = ['name', 'render_readme']
           for key in required:
               assert key in h, f'Missing required key: {key}'
           print('hacs.json valid ✅')
@@ -37,6 +37,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq nodejs > /dev/null 2>&1
           node --check school-schedule-card.js
+          node --check custom_components/school_schedule/school-schedule-card.js
+          echo "Both JS files syntax valid ✅"
           echo "JS syntax valid ✅"
       - name: Python syntax check
         run: |
