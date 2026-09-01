@@ -889,12 +889,11 @@ class SchoolScheduleCard extends HTMLElement {
         color: var(--primary-text-color, #fff);
         font-size: 0.72em; font-weight: 700;
         cursor: pointer; white-space: nowrap;
-        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
       }
       .ssc-btn:hover {
-        transform: translateY(-2px);
-        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 30%, transparent);
-        box-shadow: 0 6px 20px color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 35%, transparent);
+        box-shadow: 0 4px 16px color-mix(in srgb, var(--primary-color, #7c4dff) 12%, transparent);
       }
       .ssc-btn-active {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 15%, transparent);
@@ -1000,7 +999,7 @@ class SchoolScheduleCard extends HTMLElement {
       /* === Day grid === */
       .grid {
         display: grid; width: 100%;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 7px;
       }
       .day {
@@ -1009,11 +1008,11 @@ class SchoolScheduleCard extends HTMLElement {
         background: color-mix(in srgb, var(--card-background-color, #111118) 40%, transparent);
         backdrop-filter: blur(8px);
         border: 1px solid color-mix(in srgb, var(--divider-color, rgba(255,255,255,0.06)) 60%, transparent);
-        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.3s, box-shadow 0.3s;
+        transition: border-color 0.2s, box-shadow 0.2s;
       }
       .day:hover {
-        transform: translateY(-3px);
         border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 20%, transparent);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
       }
       .day-active {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 6%, transparent);
@@ -1075,13 +1074,13 @@ class SchoolScheduleCard extends HTMLElement {
         border-radius: 12px; overflow: visible;
         background: var(--c05, transparent);
         border: 1px solid color-mix(in srgb, var(--divider-color, rgba(255,255,255,0.05)) 50%, transparent);
-        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         cursor: default;
       }
       .lc:hover {
-        transform: translateY(-3px) scale(1.02);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.25), 0 0 12px var(--c20, transparent);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 8px var(--c20, transparent);
         border-color: var(--c30, transparent);
+        background: var(--c10, transparent);
       }
 
       .lc-now {
@@ -1146,11 +1145,11 @@ class SchoolScheduleCard extends HTMLElement {
         background: color-mix(in srgb, var(--card-background-color, #111118) 85%, transparent);
         border: 1px solid color-mix(in srgb, var(--c, #7c4dff) 20%, transparent);
         cursor: pointer; padding: 0;
-        transition: all 0.2s;
+        transition: border-color 0.2s, background 0.2s;
       }
       .lc-edit-btn:hover {
-        transform: scale(1.15);
         border-color: var(--c, #7c4dff);
+        background: color-mix(in srgb, var(--c, #7c4dff) 10%, transparent);
       }
       .lc-edit-btn ha-icon {
         --mdc-icon-size: 13px;
@@ -1167,11 +1166,10 @@ class SchoolScheduleCard extends HTMLElement {
         border: 1px dashed color-mix(in srgb, var(--primary-color, #7c4dff) 25%, transparent);
         background: transparent;
         cursor: pointer; width: 100%;
-        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
       }
       .lc-add:hover {
         background: color-mix(in srgb, var(--primary-color, #7c4dff) 8%, transparent);
-        transform: translateY(-2px);
         border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 40%, transparent);
       }
       .lc-add ha-icon {
@@ -1321,7 +1319,7 @@ class SchoolScheduleCard extends HTMLElement {
       }
 
       @media (max-width: 600px) {
-        .grid { gap: 3px; }
+        .grid { gap: 3px; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
         .day { padding: 6px 3px 8px; }
         .lc-content { padding: 6px 6px; }
         .lc-subject { font-size: 0.68em; }
