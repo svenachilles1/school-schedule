@@ -53,7 +53,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "School Schedule"
-3. Enter the child's name (e.g., "Michelle")
+3. Enter the child's name (e.g., "Tom")
 4. The integration creates 7 sensors automatically
 
 ### Adding lessons
@@ -86,7 +86,7 @@ data:
 
 ```yaml
 type: custom:school-schedule-card
-child_name: Michelle
+child_name: Tom
 ```
 
 | Option | Type | Required | Description |
