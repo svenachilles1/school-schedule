@@ -1,18 +1,22 @@
 # School Schedule
 
-Eine Custom Integration für Home Assistant zur Verwaltung von Schulstundenplänen.
+A custom Home Assistant integration for managing school schedules with an Ultra Premium Lovelace card.
 
-## Funktionen
+## Features
 
-- **Stundenplan-Verwaltung:** Legt Stunden pro Wochentag mit Fach, Raum, Lehrer, Zeit, Farbe und Icon an
-- **7 Sensoren pro Kind:** Heute, Morgen, Montag–Freitag
-- **Ultra Premium Lovelace Card:** 3D Glassmorphism, animierter Aurora-Hintergrund
-- **Tagesansicht-Toggle:** Wechsel zwischen Wochen- und Tagesansicht direkt in der Karte
-- **Inline-Verwaltung:** Stunden direkt über die Karte hinzufügen, bearbeiten und löschen
-- **Hero-Sektion:** Zeigt aktuell laufende Stunde (JETZT) und nächste Stunde (ALS NÄCHSTES)
+- **Schedule management:** Add lessons per weekday with subject, room, teacher, time, color, and icon
+- **7 sensors per child:** Today, Tomorrow, Monday–Friday
+- **Ultra Premium Lovelace Card:** 3D Glassmorphism, animated aurora background
+- **Day view toggle:** Switch between week and day view directly in the card
+- **Inline management:** Add, edit, and delete lessons directly from the card
+- **Hero section:** Shows currently running lesson (JETZT) and next lesson (ALS NÄCHSTES)
 - **Services:** `add_lesson`, `remove_lesson`, `update_lesson`, `get_schedule`
-- **Mehrere Kinder:** Jedes Kind bekommt einen eigenen Stundenplan
+- **Multi-child:** Each child gets their own schedule
 
 ## Installation
 
-Über HACS oder manuell. Siehe README.md für Details.
+Via HACS or manually. See [README.md](https://github.com/svenachilles1/school-schedule/blob/main/README.md) for detailed instructions.
+
+## Note
+
+This repository ships both the integration (`custom_components/school_schedule/`) and the Lovelace card (`school-schedule-card.js`). After installing the integration, you also need to register the card as a dashboard resource — see the README for details.
