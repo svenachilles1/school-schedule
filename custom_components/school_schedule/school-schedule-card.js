@@ -32,7 +32,7 @@ class SchoolScheduleCard extends HTMLElement {
     this._config = config;
     this._childName = config.child_name || "";
     this._cardHeight = config.height || "";
-    this._columnSpan = config.column_span || 1;
+    this._cardWidth = config.width || "";
     const savedView = localStorage.getItem("ssc_view_" + this._childName.toLowerCase());
     if (savedView === "week" || savedView === "day") {
       this._viewMode = savedView;
@@ -502,13 +502,14 @@ class SchoolScheduleCard extends HTMLElement {
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
     const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
+    const widthStyle = this._cardWidth ? (' style="max-width:' + this._cardWidth + ';margin:0 auto"') : "";
 
     this._shadow.innerHTML =
       '<style>' + this._styles() + '</style>' +
-      '<ha-card class="' + cardClass + '"' + heightStyle + '>' +
+      '<ha-card class="' + cardClass + '"' + heightStyle + '>'
         '<div class="aurora"></div>' +
         '<div class="aurora aurora2"></div>' +
-        '<div class="content">' +
+        '<div class="content"' + widthStyle + '>' +
           '<div class="title-row">' +
             '<div class="title-icon">' +
               '<ha-icon icon="mdi:school" style="color:#fff;--mdc-icon-size:22px"></ha-icon>' +
@@ -898,7 +899,7 @@ class SchoolScheduleCard extends HTMLElement {
       .ssc {
         position: relative; width: 100%; max-width: 100%; height: auto;
         border-radius: 24px;
-        overflow: visible;
+        overflow: hidden;
         background: var(--card-background-color, #111118);
         border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 12%, transparent);
         box-shadow: 0 12px 48px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.15);
@@ -1578,4 +1579,48 @@ window.customCards.push({
   name: "School Schedule Card",
   description: "Stundenplan-Karte Ultra Premium v3",
   preview: false,
+  getConfig: function() {
+    return {
+      type: "custom:school-schedule-card",
+      child_name: "",
+      height: "",
+      width: "",
+    };
+  },
+  getStubConfig: function() {
+    return {
+      type: "custom:school-schedule-card",
+      child_name: "Michelle",
+      height: "",
+      width: "",
+    };
+  },
 });
+
+// Visual editor schema
+window.customCards = window.customCards || [];
+const sscEditorSchema = [
+  {
+    name: "child_name",
+    label: "Name des Kindes",
+    selector: { text: {} },
+  },
+  {
+    name: "height",
+    label: "Höhe der Karte (z.B. 500px oder leer für automatisch)",
+    selector: { text: {} },
+  },
+  {
+    name: "width",
+    label: "Maximale Breite (z.B. 600px oder leer für voll)",
+    selector: { text: {} },
+  },
+];
+
+// Register the editor
+if (window.loadCustomHuOptions) {
+  window.loadCustomHuOptions.push({
+    type: "school-schedule-card",
+    schema: sscEditorSchema,
+  });
+}
