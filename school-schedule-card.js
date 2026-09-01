@@ -1573,19 +1573,76 @@ class SchoolScheduleCard extends HTMLElement {
 
 customElements.define("school-schedule-card", SchoolScheduleCard);
 
+// Visual editor — separate custom element
+class SchoolScheduleCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = config || {};
+    this._hass = null;
+    this._shadow = this.attachShadow({ mode: "open" });
+    this._shadow.innerHTML = `
+      <style>
+        .ssc-editor { display: flex; flex-direction: column; gap: 16px; padding: 8px 0; }
+        .ssc-editor-label { font-size: 14px; font-weight: 500; margin-bottom: 4px; color: var(--primary-text-color); }
+        .ssc-editor-input {
+          width: 100%; padding: 8px 12px; border-radius: 8px;
+          border: 1px solid var(--divider-color, rgba(0,0,0,0.1));
+          background: var(--card-background-color, #fff); color: var(--primary-text-color, #000);
+          font-size: 14px; outline: none;
+        }
+        .ssc-editor-input:focus { border-color: var(--primary-color); }
+        .ssc-editor-hint { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
+      </style>
+      <div class="ssc-editor">
+        <div>
+          <div class="ssc-editor-label">Name des Kindes</div>
+          <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._config.child_name || ""}" placeholder="z.B. Michelle" />
+          <div class="ssc-editor-hint">Muss mit dem Namen in der Integration übereinstimmen</div>
+        </div>
+        <div>
+          <div class="ssc-editor-label">Höhe der Karte</div>
+          <input class="ssc-editor-input" id="ssc-edit-height" type="text" value="${this._config.height || ""}" placeholder="z.B. 500px (leer = automatisch)" />
+          <div class="ssc-editor-hint">Feste Höhe mit Scrollbar, z.B. 500px. Leer = wächst mit Inhalt</div>
+        </div>
+        <div>
+          <div class="ssc-editor-label">Maximale Breite</div>
+          <input class="ssc-editor-input" id="ssc-edit-width" type="text" value="${this._config.width || ""}" placeholder="z.B. 600px (leer = volle Breite)" />
+          <div class="ssc-editor-hint">Begrenzt die Kartenbreite, z.B. 600px. Leer = volle Breite</div>
+        </div>
+      </div>
+    `;
+    
+    const inputs = this._shadow.querySelectorAll(".ssc-editor-input");
+    inputs.forEach(input => {
+      input.addEventListener("input", () => {
+        this._config = {
+          type: "custom:school-schedule-card",
+          child_name: this._shadow.querySelector("#ssc-edit-child").value,
+          height: this._shadow.querySelector("#ssc-edit-height").value,
+          width: this._shadow.querySelector("#ssc-edit-width").value,
+        };
+        const event = new CustomEvent("config-changed", {
+          detail: { config: this._config },
+          bubbles: true,
+          composed: true,
+        });
+        this.dispatchEvent(event);
+      });
+    });
+  }
+
+  set hass(hass) { this._hass = hass; }
+}
+
+customElements.define("school-schedule-card-editor", SchoolScheduleCardEditor);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
   description: "Stundenplan-Karte Ultra Premium v3",
   preview: false,
-  getConfig: function() {
-    return {
-      type: "custom:school-schedule-card",
-      child_name: "",
-      height: "",
-      width: "",
-    };
+  getConfigElement: function() {
+    return document.createElement("school-schedule-card-editor");
   },
   getStubConfig: function() {
     return {
@@ -1596,31 +1653,3 @@ window.customCards.push({
     };
   },
 });
-
-// Visual editor schema
-window.customCards = window.customCards || [];
-const sscEditorSchema = [
-  {
-    name: "child_name",
-    label: "Name des Kindes",
-    selector: { text: {} },
-  },
-  {
-    name: "height",
-    label: "Höhe der Karte (z.B. 500px oder leer für automatisch)",
-    selector: { text: {} },
-  },
-  {
-    name: "width",
-    label: "Maximale Breite (z.B. 600px oder leer für voll)",
-    selector: { text: {} },
-  },
-];
-
-// Register the editor
-if (window.loadCustomHuOptions) {
-  window.loadCustomHuOptions.push({
-    type: "school-schedule-card",
-    schema: sscEditorSchema,
-  });
-}
