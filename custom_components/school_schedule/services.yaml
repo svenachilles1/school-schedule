@@ -1,0 +1,247 @@
+add_lesson:
+  name: Stunde hinzufügen
+  description: Fügt eine neue Stunde zum Stundenplan hinzu.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes, dessen Stundenplan geändert wird.
+      required: true
+      example: Michelle
+      selector:
+        text:
+    weekday:
+      name: Wochentag
+      description: Wochentag der Stunde.
+      required: true
+      example: monday
+      selector:
+        select:
+          options:
+            - label: Montag
+              value: monday
+            - label: Dienstag
+              value: tuesday
+            - label: Mittwoch
+              value: wednesday
+            - label: Donnerstag
+              value: thursday
+            - label: Freitag
+              value: friday
+    lesson_number:
+      name: Stundennummer
+      description: Nummer der Schulstunde (1-12).
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    subject:
+      name: Fach
+      description: Schulfach.
+      required: true
+      example: Mathematik
+      selector:
+        text:
+    room:
+      name: Raum
+      description: Klassenraum.
+      required: false
+      example: R204
+      selector:
+        text:
+    teacher:
+      name: Lehrer
+      description: Name des Lehrers.
+      required: false
+      example: Herr Müller
+      selector:
+        text:
+    start_time:
+      name: Startzeit
+      description: Startzeit der Stunde (HH:MM).
+      required: true
+      example: "08:00"
+      selector:
+        text:
+    end_time:
+      name: Endzeit
+      description: Endzeit der Stunde (HH:MM).
+      required: true
+      example: "08:45"
+      selector:
+        text:
+    color:
+      name: Farbe
+      description: Hex-Farbcode für die Anzeige.
+      required: false
+      example: "#ff5733"
+      selector:
+        text:
+    icon:
+      name: Icon
+      description: MDI-Icon für die Anzeige.
+      required: false
+      example: "mdi:school"
+      selector:
+        text:
+
+remove_lesson:
+  name: Stunde entfernen
+  description: Entfernt eine Stunde aus dem Stundenplan.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Michelle
+      selector:
+        text:
+    weekday:
+      name: Wochentag
+      description: Wochentag der zu entfernenden Stunde.
+      required: true
+      example: monday
+      selector:
+        select:
+          options:
+            - label: Montag
+              value: monday
+            - label: Dienstag
+              value: tuesday
+            - label: Mittwoch
+              value: wednesday
+            - label: Donnerstag
+              value: thursday
+            - label: Freitag
+              value: friday
+    lesson_number:
+      name: Stundennummer
+      description: Nummer der zu entfernenden Stunde.
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+
+update_lesson:
+  name: Stunde aktualisieren
+  description: Aktualisiert eine bestehende Stunde im Stundenplan.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Michelle
+      selector:
+        text:
+    weekday:
+      name: Wochentag
+      description: Wochentag der zu aktualisierenden Stunde.
+      required: true
+      example: monday
+      selector:
+        select:
+          options:
+            - label: Montag
+              value: monday
+            - label: Dienstag
+              value: tuesday
+            - label: Mittwoch
+              value: wednesday
+            - label: Donnerstag
+              value: thursday
+            - label: Freitag
+              value: friday
+    lesson_number:
+      name: Stundennummer
+      description: Nummer der zu aktualisierenden Stunde.
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    subject:
+      name: Fach
+      description: Neues Fach.
+      required: false
+      example: Deutsch
+      selector:
+        text:
+    room:
+      name: Raum
+      description: Neuer Raum.
+      required: false
+      example: R101
+      selector:
+        text:
+    teacher:
+      name: Lehrer
+      description: Neuer Lehrer.
+      required: false
+      example: Frau Schmidt
+      selector:
+        text:
+    start_time:
+      name: Startzeit
+      description: Neue Startzeit (HH:MM).
+      required: false
+      example: "09:00"
+      selector:
+        text:
+    end_time:
+      name: Endzeit
+      description: Neue Endzeit (HH:MM).
+      required: false
+      example: "09:45"
+      selector:
+        text:
+    color:
+      name: Farbe
+      description: Neuer Hex-Farbcode.
+      required: false
+      example: "#33aa55"
+      selector:
+        text:
+    icon:
+      name: Icon
+      description: Neues MDI-Icon.
+      required: false
+      example: "mdi:book"
+      selector:
+        text:
+
+get_schedule:
+  name: Stundenplan abrufen
+  description: Ruft den Stundenplan für einen bestimmten Wochentag ab.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Michelle
+      selector:
+        text:
+    weekday:
+      name: Wochentag
+      description: Wochentag (optional, bei keinem Angabe wird der gesamte Plan zurückgegeben).
+      required: false
+      example: monday
+      selector:
+        select:
+          options:
+            - label: Montag
+              value: monday
+            - label: Dienstag
+              value: tuesday
+            - label: Mittwoch
+              value: wednesday
+            - label: Donnerstag
+              value: thursday
+            - label: Freitag
+              value: friday
