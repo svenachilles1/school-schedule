@@ -2,7 +2,7 @@
 
 A custom Home Assistant integration for managing school schedules with an Ultra Premium Lovelace card.
 
-![School Schedule Card](https://raw.githubusercontent.com/svenachilles1/school-schedule/main/brand/icon.png)
+![School Schedule Card](brand/icon.png)
 
 ## Features
 
@@ -35,7 +35,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 
 ### Manual
 
-1. Download `school-schedule-card.js` from the [latest release](https://github.com/svenachilles1/school-schedule/releases)
+1. Download `school-schedule-card.js` from the [the repository](https://github.com/svenachilles1/school-schedule)
 2. Copy it to `<config>/www/school-schedule-card.js`
 3. Add a resource in your dashboard settings:
    ```yaml
