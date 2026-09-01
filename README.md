@@ -27,23 +27,44 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 
 ### Via HACS (recommended)
 
+**Step 1 — Install the integration:**
+
 1. Open HACS in your Home Assistant instance
-2. Go to **Frontend** → **+ Explore & Download Repositories**
+2. Go to **Integrations** → **+ Explore & Download Repositories**
 3. Search for "School Schedule" and click **Download**
 4. Restart Home Assistant
-5. Add the integration via **Settings** → **Devices & Services** → **Add Integration** → "School Schedule"
+
+**Step 2 — Install the Lovelace card:**
+
+Since this repo ships both an integration and a Lovelace card, you need to register the card as a dashboard resource manually:
+
+1. Copy `school-schedule-card.js` from `custom_components/school_schedule/` to your `<config>/www/` directory
+   - If you installed via HACS, the file is at `<config>/custom_components/school_schedule/school-schedule-card.js`
+   - Copy it to `<config>/www/school-schedule-card.js`
+2. Add a resource in your dashboard settings (**Settings** → **Dashboards** → ⋮ → **Resources** → **+ Add Resource**):
+   ```yaml
+   url: /local/school-schedule-card.js
+   type: module
+   ```
+3. Reload your browser
+
+**Step 3 — Add the integration:**
+
+1. Go to **Settings** → **Devices & Services** → **Add Integration**
+2. Search for "School Schedule"
+3. Enter the child's name and confirm
 
 ### Manual
 
-1. Download `school-schedule-card.js` from the [the repository](https://github.com/svenachilles1/school-schedule)
-2. Copy it to `<config>/www/school-schedule-card.js`
-3. Add a resource in your dashboard settings:
+1. Download the latest release from the [releases page](https://github.com/svenachilles1/school-schedule/releases)
+2. Copy `custom_components/school_schedule/` to `<config>/custom_components/school_schedule/`
+3. Copy `school-schedule-card.js` to `<config>/www/school-schedule-card.js`
+4. Add a resource in your dashboard settings:
    ```yaml
    resources:
      - url: /local/school-schedule-card.js
        type: module
    ```
-4. Copy the `custom_components/school_schedule/` directory to `<config>/custom_components/school_schedule/`
 5. Restart Home Assistant
 6. Add the integration via **Settings** → **Devices & Services** → **Add Integration** → "School Schedule"
 
