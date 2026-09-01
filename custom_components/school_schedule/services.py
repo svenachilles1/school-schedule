@@ -21,6 +21,7 @@ from .const import (
     ATTR_END_TIME,
     ATTR_COLOR,
     ATTR_ICON,
+    ATTR_IS_BREAK,
     CONF_CHILD_NAME,
     DOMAIN,
     SERVICE_ADD_LESSON,
@@ -47,6 +48,7 @@ ADD_LESSON_SCHEMA = vol.Schema(
         vol.Required(ATTR_END_TIME): cv.string,
         vol.Optional(ATTR_COLOR, default=DEFAULT_COLOR): cv.string,
         vol.Optional(ATTR_ICON, default=DEFAULT_ICON): cv.string,
+        vol.Optional(ATTR_IS_BREAK, default=False): cv.boolean,
     }
 )
 
@@ -70,6 +72,7 @@ UPDATE_LESSON_SCHEMA = vol.Schema(
         vol.Optional(ATTR_END_TIME): cv.string,
         vol.Optional(ATTR_COLOR): cv.string,
         vol.Optional(ATTR_ICON): cv.string,
+        vol.Optional(ATTR_IS_BREAK): cv.boolean,
     }
 )
 
@@ -111,6 +114,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             "end_time": call.data[ATTR_END_TIME],
             "color": call.data.get(ATTR_COLOR, DEFAULT_COLOR),
             "icon": call.data.get(ATTR_ICON, DEFAULT_ICON),
+            "is_break": call.data.get(ATTR_IS_BREAK, False),
         }
 
         success = await coordinator.add_lesson(lesson)
@@ -140,7 +144,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         lesson_number = call.data[ATTR_LESSON_NUMBER]
 
         updates = {}
-        for field in [ATTR_SUBJECT, ATTR_ROOM, ATTR_TEACHER, ATTR_START_TIME, ATTR_END_TIME, ATTR_COLOR, ATTR_ICON]:
+        for field in [ATTR_SUBJECT, ATTR_ROOM, ATTR_TEACHER, ATTR_START_TIME, ATTR_END_TIME, ATTR_COLOR, ATTR_ICON, ATTR_IS_BREAK]:
             if field in call.data:
                 key = field
                 updates[key] = call.data[field]
