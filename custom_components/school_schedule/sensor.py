@@ -20,7 +20,6 @@ from .const import (
     CONF_END_TIME,
     CONF_COLOR,
     CONF_ICON,
-    CONF_IS_BREAK,
     DOMAIN,
     PLATFORMS,
     SENSOR_TODAY,
@@ -85,9 +84,9 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
 
     @property
     def native_value(self) -> int:
-        """Return the number of lessons (excluding breaks) for this sensor's day."""
+        """Return the number of lessons for this sensor's day."""
         lessons = self._get_lessons()
-        return len([l for l in lessons if not l.get(CONF_IS_BREAK, False)])
+        return len(lessons)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -95,8 +94,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         lessons = self._get_lessons()
         attrs: dict[str, Any] = {
             "child_name": self._child_name,
-            "total_lessons": len([l for l in lessons if not l.get(CONF_IS_BREAK, False)]),
-            "total_breaks": len([l for l in lessons if l.get(CONF_IS_BREAK, False)]),
+            "total_lessons": len(lessons),
             "lessons": [],
         }
 
@@ -111,7 +109,6 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                 "end_time": lesson.get(CONF_END_TIME, ""),
                 "color": lesson.get(CONF_COLOR, ""),
                 "icon": lesson.get(CONF_ICON, ""),
-                "is_break": lesson.get(CONF_IS_BREAK, False),
             }
             lesson_list.append(lesson_data)
 
@@ -184,12 +181,10 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         return 0
 
     def _find_current_lesson(self, lessons: list[dict[str, Any]]) -> dict[str, Any] | None:
-        """Find the lesson happening right now (skips breaks)."""
+        """Find the lesson happening right now."""
         now = datetime.now()
         current_min = now.hour * 60 + now.minute
         for lesson in lessons:
-            if lesson.get(CONF_IS_BREAK, False):
-                continue
             start = self._strip_seconds(lesson.get(CONF_START_TIME, ""))
             end = self._strip_seconds(lesson.get(CONF_END_TIME, ""))
             if not start or not end:
@@ -217,12 +212,10 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         return None
 
     def _find_next_lesson(self, lessons: list[dict[str, Any]]) -> dict[str, Any] | None:
-        """Find the next upcoming lesson (skips breaks)."""
+        """Find the next upcoming lesson."""
         now = datetime.now()
         current_min = now.hour * 60 + now.minute
         for lesson in lessons:
-            if lesson.get(CONF_IS_BREAK, False):
-                continue
             start = self._strip_seconds(lesson.get(CONF_START_TIME, ""))
             if not start:
                 continue

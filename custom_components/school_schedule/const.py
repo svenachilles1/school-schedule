@@ -23,7 +23,6 @@ CONF_START_TIME: Final[str] = "start_time"
 CONF_END_TIME: Final[str] = "end_time"
 CONF_COLOR: Final[str] = "color"
 CONF_ICON: Final[str] = "icon"
-CONF_IS_BREAK: Final[str] = "is_break"
 
 # Service names
 SERVICE_ADD_LESSON: Final[str] = "add_lesson"
@@ -42,7 +41,6 @@ ATTR_START_TIME: Final[str] = "start_time"
 ATTR_END_TIME: Final[str] = "end_time"
 ATTR_COLOR: Final[str] = "color"
 ATTR_ICON: Final[str] = "icon"
-ATTR_IS_BREAK: Final[str] = "is_break"
 ATTR_LESSONS: Final[str] = "lessons"
 
 # Weekdays
