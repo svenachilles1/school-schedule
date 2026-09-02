@@ -11,6 +11,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Config Flow:** Set up via Home Assistant UI — no YAML needed
 - **Services:** `add_lesson`, `remove_lesson`, `update_lesson`, `get_schedule`
 - **Local push:** Sensors update in real-time when lessons are modified
+- **Break/Pause support:** Mark lessons as breaks — displayed differently (no room/teacher, dashed border, coffee icon) with time info
+- **Apply to all days:** When adding a lesson or break, optionally apply it to all weekdays (Mon–Fri) at once
 
 ### Lovelace Card (Ultra Premium)
 - **3D Glassmorphism** design with animated aurora background
@@ -21,6 +23,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
   - **Edit:** Pencil icon on each lesson
   - **Delete:** Trash icon with confirmation dialog
 - **Color-coded lessons:** Each lesson has a custom color and icon
+- **Break/Pause rendering:** Breaks shown with dashed border, italic subject, coffee icon — no room/teacher displayed
+- **Break/Pause form:** Checkbox "Als Pause markieren" + "Auf alle Tage anwenden" in the inline add form. Room/teacher auto-disabled for breaks
 - **Responsive:** Adapts to mobile and desktop
 
 ## Installation
@@ -101,6 +105,21 @@ data:
   end_time: "08:45"
   color: "#44739e"
   icon: mdi:school
+  is_break: false
+  apply_to_all_days: false
+```
+
+**Adding a break (pause) to all days at once:**
+```yaml
+service: school_schedule.add_lesson
+data:
+  child_name: your_child
+  weekday: monday
+  lesson_number: 3
+  start_time: "10:00"
+  end_time: "10:15"
+  is_break: true
+  apply_to_all_days: true
 ```
 
 ### Card configuration
@@ -137,7 +156,18 @@ Each child gets 7 sensors:
 | `sensor.stundenplan_<child>_donnerstag` | Thursday's lessons |
 | `sensor.stundenplan_<child>_freitag` | Friday's lessons |
 
-The `heute` sensor also provides `current_lesson` and `next_lesson` attributes.
+The `heute` sensor also provides `current_lesson` and `next_lesson` attributes. Both include an `is_break` flag for break/pause lessons.
+
+### Break/Pause lessons
+
+Lessons can be marked as breaks (`is_break: true`). Breaks are rendered differently in the card:
+- Dashed border instead of solid
+- Italic subject text (defaults to "Pause")
+- Coffee icon instead of lesson number
+- No room or teacher displayed
+- Time is still shown
+
+When adding a break, `subject` is optional (defaults to "Pause"), and `room`/`teacher` are automatically cleared. Use `apply_to_all_days: true` to add the same break to all weekdays at once.
 
 ## License
 

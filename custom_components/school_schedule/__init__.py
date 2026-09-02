@@ -15,7 +15,9 @@ from .const import (
     DOMAIN, PLATFORMS, CONF_CHILD_NAME, CONF_LESSONS,
     CONF_WEEKDAY, CONF_LESSON_NUMBER, CONF_SUBJECT,
     CONF_ROOM, CONF_TEACHER, CONF_START_TIME, CONF_END_TIME,
-    CONF_COLOR, CONF_ICON, WEEKDAYS, DEFAULT_COLOR, DEFAULT_ICON,
+    CONF_COLOR, CONF_ICON, CONF_IS_BREAK, CONF_APPLY_TO_ALL_DAYS,
+    WEEKDAYS, DEFAULT_COLOR, DEFAULT_ICON,
+    DEFAULT_BREAK_COLOR, DEFAULT_BREAK_ICON, DEFAULT_BREAK_SUBJECT,
     SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE,
 )
 from .coordinator import SchoolScheduleCoordinator
@@ -26,13 +28,15 @@ ADD_LESSON_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("weekday"): vol.In(WEEKDAYS),
     vol.Required("lesson_number"): vol.Coerce(int),
-    vol.Required("subject"): cv.string,
+    vol.Optional("subject"): cv.string,
     vol.Optional("room", default=""): cv.string,
     vol.Optional("teacher", default=""): cv.string,
     vol.Required("start_time"): cv.string,
     vol.Required("end_time"): cv.string,
     vol.Optional("color", default=DEFAULT_COLOR): cv.string,
     vol.Optional("icon", default=DEFAULT_ICON): cv.string,
+    vol.Optional("is_break", default=False): cv.boolean,
+    vol.Optional("apply_to_all_days", default=False): cv.boolean,
 })
 
 REMOVE_LESSON_SCHEMA = vol.Schema({
@@ -52,6 +56,7 @@ UPDATE_LESSON_SCHEMA = vol.Schema({
     vol.Optional("end_time"): cv.string,
     vol.Optional("color"): cv.string,
     vol.Optional("icon"): cv.string,
+    vol.Optional("is_break"): cv.boolean,
 })
 
 GET_SCHEDULE_SCHEMA = vol.Schema({
@@ -92,22 +97,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("add_lesson called for %s", child_name)
             coordinator = _find_coordinator(hass, child_name)
 
-            lesson = {
-                "weekday": call.data["weekday"],
+            is_break = call.data.get("is_break", False)
+            apply_to_all = call.data.get("apply_to_all_days", False)
+
+            if is_break:
+                subject = call.data.get("subject", "") or DEFAULT_BREAK_SUBJECT
+                color = call.data.get("color", DEFAULT_BREAK_COLOR)
+                icon = call.data.get("icon", DEFAULT_BREAK_ICON)
+            else:
+                subject = call.data.get("subject", "")
+                if not subject:
+                    raise HomeAssistantError("subject is required for non-break lessons")
+                color = call.data.get("color", DEFAULT_COLOR)
+                icon = call.data.get("icon", DEFAULT_ICON)
+
+            base_lesson = {
                 "lesson_number": call.data["lesson_number"],
-                "subject": call.data["subject"],
-                "room": call.data.get("room", ""),
-                "teacher": call.data.get("teacher", ""),
+                "subject": subject,
+                "room": call.data.get("room", "") if not is_break else "",
+                "teacher": call.data.get("teacher", "") if not is_break else "",
                 "start_time": call.data["start_time"],
                 "end_time": call.data["end_time"],
-                "color": call.data.get("color", DEFAULT_COLOR),
-                "icon": call.data.get("icon", DEFAULT_ICON),
+                "color": color,
+                "icon": icon,
+                "is_break": is_break,
             }
 
-            success = await coordinator.add_lesson(lesson)
-            _LOGGER.info("add_lesson result: %s", success)
-            if not success:
-                raise HomeAssistantError("Failed to add lesson")
+            if apply_to_all:
+                for day in WEEKDAYS:
+                    lesson = {**base_lesson, "weekday": day}
+                    success = await coordinator.add_lesson(lesson)
+                    _LOGGER.info("add_lesson (all days, %s) result: %s", day, success)
+            else:
+                lesson = {**base_lesson, "weekday": call.data["weekday"]}
+                success = await coordinator.add_lesson(lesson)
+                _LOGGER.info("add_lesson result: %s", success)
+                if not success:
+                    raise HomeAssistantError("Failed to add lesson")
 
         async def handle_remove_lesson(call: ServiceCall) -> None:
             """Handle remove_lesson service call."""
@@ -122,7 +148,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             child_name = call.data["child_name"]
             coordinator = _find_coordinator(hass, child_name)
             updates = {}
-            for field in ["subject", "room", "teacher", "start_time", "end_time", "color", "icon"]:
+            for field in ["subject", "room", "teacher", "start_time", "end_time", "color", "icon", "is_break"]:
                 if field in call.data:
                     updates[field] = call.data[field]
             success = await coordinator.update_lesson(call.data["weekday"], call.data["lesson_number"], updates)

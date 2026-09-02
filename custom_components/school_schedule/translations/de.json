@@ -34,7 +34,9 @@
           "start_time": "Startzeit (HH:MM)",
           "end_time": "Endzeit (HH:MM)",
           "color": "Farbe (Hex-Code, z.B. #ff5733)",
-          "icon": "Icon (z.B. mdi:school)"
+          "icon": "Icon (z.B. mdi:school)",
+          "is_break": "Als Pause markieren",
+          "apply_to_all_days": "Auf alle Tage anwenden (Mo-Fr)"
         }
       },
       "remove_lesson": {
@@ -57,7 +59,8 @@
           "start_time": "Startzeit (HH:MM)",
           "end_time": "Endzeit (HH:MM)",
           "color": "Farbe (Hex-Code, z.B. #ff5733)",
-          "icon": "Icon (z.B. mdi:school)"
+          "icon": "Icon (z.B. mdi:school)",
+          "is_break": "Als Pause markieren"
         }
       }
     }

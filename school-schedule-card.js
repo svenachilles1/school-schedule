@@ -152,6 +152,24 @@ class SchoolScheduleCard extends HTMLElement {
       const iconPreview = this._shadow.querySelector("#ssc-icon-preview");
       if (iconPreview) iconPreview.style.color = e.target.value;
     }
+    if (e.target.id === "ssc-is-break") {
+      const isBreak = e.target.checked;
+      const subjectLabel = this._shadow.querySelector('.ssc-field-row .ssc-field-label');
+      const roomInput = this._shadow.querySelector("#ssc-room");
+      const teacherInput = this._shadow.querySelector("#ssc-teacher");
+      const subjectInput = this._shadow.querySelector("#ssc-subject");
+      if (isBreak) {
+        if (subjectLabel) subjectLabel.textContent = "Fach";
+        if (roomInput) { roomInput.value = ""; roomInput.disabled = true; }
+        if (teacherInput) { teacherInput.value = ""; teacherInput.disabled = true; }
+        if (subjectInput && !subjectInput.value) { subjectInput.value = "Pause"; subjectInput.style.opacity = "0.6"; }
+      } else {
+        if (subjectLabel) subjectLabel.textContent = "Fach *";
+        if (roomInput) roomInput.disabled = false;
+        if (teacherInput) teacherInput.disabled = false;
+        if (subjectInput && subjectInput.value === "Pause") { subjectInput.value = ""; subjectInput.style.opacity = "1"; }
+      }
+    }
   }
 
   // === View / Edit Toggles ===
@@ -1088,9 +1106,47 @@ class SchoolScheduleCard extends HTMLElement {
         box-shadow: 0 0 20px var(--c20, transparent);
         animation: lc-glow 2s ease-in-out infinite;
       }
+      .lc-break {
+        border-style: dashed !important;
+        opacity: 0.85;
+      }
+      .lc-break .lc-subject {
+        font-style: italic;
+        opacity: 0.8;
+      }
+      .lc-break .lc-num {
+        opacity: 0.6;
+      }
+      .lc-break .lc-rail {
+        opacity: 0.4;
+      }
       @keyframes lc-glow {
         0%, 100% { box-shadow: 0 0 14px var(--c20, transparent); }
         50% { box-shadow: 0 0 28px var(--c30, transparent), 0 0 8px var(--c, transparent); }
+      }
+      .ssc-break-row {
+        justify-content: flex-start !important;
+        gap: 20px !important;
+        padding-top: 8px;
+        border-top: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 10%, transparent);
+        margin-top: 4px;
+      }
+      .ssc-checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .ssc-checkbox-label input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary-color, #7c4dff);
+      }
+      .ssc-checkbox-text {
+        font-size: 13px;
+        color: var(--primary-text-color, #e0e0e0);
       }
 
       .lc-rail {

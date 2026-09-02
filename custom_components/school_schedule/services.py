@@ -21,6 +21,8 @@ from .const import (
     ATTR_END_TIME,
     ATTR_COLOR,
     ATTR_ICON,
+    ATTR_IS_BREAK,
+    ATTR_APPLY_TO_ALL_DAYS,
     CONF_CHILD_NAME,
     DOMAIN,
     SERVICE_ADD_LESSON,
@@ -30,6 +32,9 @@ from .const import (
     WEEKDAYS,
     DEFAULT_COLOR,
     DEFAULT_ICON,
+    DEFAULT_BREAK_COLOR,
+    DEFAULT_BREAK_ICON,
+    DEFAULT_BREAK_SUBJECT,
 )
 from .coordinator import SchoolScheduleCoordinator
 
@@ -40,13 +45,15 @@ ADD_LESSON_SCHEMA = vol.Schema(
         vol.Required(ATTR_CHILD_NAME): cv.string,
         vol.Required(ATTR_WEEKDAY): vol.In(WEEKDAYS),
         vol.Required(ATTR_LESSON_NUMBER): vol.Coerce(int),
-        vol.Required(ATTR_SUBJECT): cv.string,
+        vol.Optional(ATTR_SUBJECT): cv.string,
         vol.Optional(ATTR_ROOM, default=""): cv.string,
         vol.Optional(ATTR_TEACHER, default=""): cv.string,
         vol.Required(ATTR_START_TIME): cv.string,
         vol.Required(ATTR_END_TIME): cv.string,
         vol.Optional(ATTR_COLOR, default=DEFAULT_COLOR): cv.string,
         vol.Optional(ATTR_ICON, default=DEFAULT_ICON): cv.string,
+        vol.Optional(ATTR_IS_BREAK, default=False): cv.boolean,
+        vol.Optional(ATTR_APPLY_TO_ALL_DAYS, default=False): cv.boolean,
     }
 )
 
@@ -70,6 +77,7 @@ UPDATE_LESSON_SCHEMA = vol.Schema(
         vol.Optional(ATTR_END_TIME): cv.string,
         vol.Optional(ATTR_COLOR): cv.string,
         vol.Optional(ATTR_ICON): cv.string,
+        vol.Optional(ATTR_IS_BREAK): cv.boolean,
     }
 )
 
@@ -101,21 +109,43 @@ def async_setup_services(hass: HomeAssistant) -> None:
         child_name = call.data[ATTR_CHILD_NAME]
         coordinator = _find_coordinator(hass, child_name)
 
-        lesson = {
-            "weekday": call.data[ATTR_WEEKDAY],
+        is_break = call.data.get(ATTR_IS_BREAK, False)
+        apply_to_all = call.data.get(ATTR_APPLY_TO_ALL_DAYS, False)
+        weekday = call.data[ATTR_WEEKDAY]
+
+        if is_break:
+            subject = call.data.get(ATTR_SUBJECT, "") or DEFAULT_BREAK_SUBJECT
+            color = call.data.get(ATTR_COLOR, DEFAULT_BREAK_COLOR)
+            icon = call.data.get(ATTR_ICON, DEFAULT_BREAK_ICON)
+        else:
+            subject = call.data.get(ATTR_SUBJECT, "")
+            if not subject:
+                raise HomeAssistantError("subject is required for non-break lessons")
+            color = call.data.get(ATTR_COLOR, DEFAULT_COLOR)
+            icon = call.data.get(ATTR_ICON, DEFAULT_ICON)
+
+        base_lesson = {
             "lesson_number": call.data[ATTR_LESSON_NUMBER],
-            "subject": call.data[ATTR_SUBJECT],
+            "subject": subject,
             "room": call.data.get(ATTR_ROOM, ""),
             "teacher": call.data.get(ATTR_TEACHER, ""),
             "start_time": call.data[ATTR_START_TIME],
             "end_time": call.data[ATTR_END_TIME],
-            "color": call.data.get(ATTR_COLOR, DEFAULT_COLOR),
-            "icon": call.data.get(ATTR_ICON, DEFAULT_ICON),
+            "color": color,
+            "icon": icon,
+            "is_break": is_break,
         }
 
-        success = await coordinator.add_lesson(lesson)
-        if not success:
-            raise HomeAssistantError("Failed to add lesson")
+        if apply_to_all:
+            # Add the lesson to all weekdays
+            for day in WEEKDAYS:
+                lesson = {**base_lesson, "weekday": day}
+                await coordinator.add_lesson(lesson)
+        else:
+            lesson = {**base_lesson, "weekday": weekday}
+            success = await coordinator.add_lesson(lesson)
+            if not success:
+                raise HomeAssistantError("Failed to add lesson")
 
     async def handle_remove_lesson(call: ServiceCall) -> None:
         """Handle remove_lesson service call."""
@@ -140,7 +170,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         lesson_number = call.data[ATTR_LESSON_NUMBER]
 
         updates = {}
-        for field in [ATTR_SUBJECT, ATTR_ROOM, ATTR_TEACHER, ATTR_START_TIME, ATTR_END_TIME, ATTR_COLOR, ATTR_ICON]:
+        for field in [ATTR_SUBJECT, ATTR_ROOM, ATTR_TEACHER, ATTR_START_TIME, ATTR_END_TIME, ATTR_COLOR, ATTR_ICON, ATTR_IS_BREAK]:
             if field in call.data:
                 key = field
                 updates[key] = call.data[field]
