@@ -304,9 +304,12 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _saveForm() {
+    const isBreakEl = this._shadow.querySelector("#ssc-is-break");
+    const isBreak = isBreakEl ? isBreakEl.checked : false;
+
     const subjectEl = this._shadow.querySelector("#ssc-subject");
     const subject = subjectEl ? subjectEl.value.trim() : "";
-    if (!subject) {
+    if (!subject && !isBreak) {
       if (subjectEl) {
         subjectEl.style.borderColor = "#f44336";
         subjectEl.focus();
@@ -316,6 +319,9 @@ class SchoolScheduleCard extends HTMLElement {
 
     const fd = this._formData;
     const isEdit = fd.mode === "edit";
+
+    const applyAllEl = this._shadow.querySelector("#ssc-apply-all");
+    const applyToAll = applyAllEl ? applyAllEl.checked : false;
 
     let weekday;
     if (isEdit) {
@@ -342,14 +348,18 @@ class SchoolScheduleCard extends HTMLElement {
       child_name: this._childName,
       weekday: weekday,
       lesson_number: number,
-      subject: subject,
-      room: room,
-      teacher: teacher,
+      subject: subject || (isBreak ? "Pause" : ""),
+      room: isBreak ? "" : room,
+      teacher: isBreak ? "" : teacher,
       start_time: start_time,
       end_time: end_time,
-      color: color,
-      icon: icon,
+      color: isBreak ? (color !== "#44739e" ? color : "#7a8a99") : color,
+      icon: isBreak ? (icon !== "mdi:school" ? icon : "mdi:coffee") : icon,
+      is_break: isBreak,
     };
+    if (!isEdit) {
+      serviceData.apply_to_all_days = applyToAll;
+    }
 
     if (isEdit) {
       this._hass.callService("school_schedule", "update_lesson", serviceData);
@@ -549,7 +559,8 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _renderLessonCard(lesson, isCurrent, isToday, day) {
-    const color = this._getColor(lesson);
+    const isBreak = lesson.is_break === true;
+    const color = isBreak ? (lesson.color || "#7a8a99") : this._getColor(lesson);
     const isDark = this._luminance(color) < 0.5;
     const textColor = isDark ? "#fff" : "#1a1a2e";
     const c10 = this._rgba(color, 0.1);
@@ -560,10 +571,13 @@ class SchoolScheduleCard extends HTMLElement {
 
     let cls = "lc";
     if (isCurrent) cls += " lc-now";
+    if (isBreak) cls += " lc-break";
 
     let details = "";
+    if (!isBreak) {
     if (lesson.room) details += '<span class="lc-room">' + lesson.room + '</span>';
     if (lesson.teacher) details += '<span class="lc-teacher">' + lesson.teacher + '</span>';
+    }
 
     let editBtns = "";
     if (this._editMode) {
@@ -580,7 +594,7 @@ class SchoolScheduleCard extends HTMLElement {
     return '<div class="' + cls + '" style="--c:' + color + ';--c05:' + c05 + ';--c10:' + c10 + ';--c20:' + c20 + ';--c30:' + c30 + ';--ctext:' + textColor + '">' +
       '<div class="lc-rail"></div>' +
       '<div class="lc-content">' +
-        '<div class="lc-num">' + lessonNum + '</div>' +
+        '<div class="lc-num">' + (isBreak ? '<ha-icon icon="mdi:coffee-off" style="--mdc-icon-size:16px"></ha-icon>' : lessonNum) + '</div>' +
         '<div class="lc-info">' +
           '<div class="lc-subject">' + lesson.subject + '</div>' +
           '<div class="lc-time">' + (lesson.start_time || "").slice(0,5) + " - " + (lesson.end_time || "").slice(0,5) + '</div>' +
@@ -702,6 +716,8 @@ class SchoolScheduleCard extends HTMLElement {
     const endT = (lesson.end_time || "08:45").slice(0,5);
     const colorV = lesson.color || "#44739e";
     const iconV = lesson.icon || "mdi:school";
+    const isBreakV = lesson.is_break === true;
+    const applyAllV = false;
 
     return '<div class="ssc-modal-overlay" data-action="cancel-form-bg">' +
       '<div class="ssc-form-card">' +
@@ -710,7 +726,7 @@ class SchoolScheduleCard extends HTMLElement {
         '<div class="ssc-form-fields">' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field" style="flex:2">' +
-              '<span class="ssc-field-label">Fach *</span>' +
+              '<span class="ssc-field-label">Fach' + (isBreakV ? '' : ' *') + '</span>' +
               '<input class="ssc-input" type="text" id="ssc-subject" value="' + subj + '" placeholder="z.B. Mathematik" />' +
             '</div>' +
             '<div class="ssc-field" style="flex:0 0 80px;max-width:80px">' +
@@ -753,6 +769,16 @@ class SchoolScheduleCard extends HTMLElement {
                 '<ha-icon id="ssc-icon-preview" icon="' + iconV + '" style="--mdc-icon-size:22px;color:' + colorV + '"></ha-icon>' +
               '</div>' +
             '</div>' +
+          '</div>' +
+          '<div class="ssc-field-row ssc-break-row">' +
+            '<label class="ssc-checkbox-label">' +
+              '<input type="checkbox" id="ssc-is-break"' + (isBreakV ? ' checked' : '') + ' />' +
+              '<span class="ssc-checkbox-text">Als Pause markieren</span>' +
+            '</label>' +
+            (isEdit ? '' : '<label class="ssc-checkbox-label">' +
+              '<input type="checkbox" id="ssc-apply-all"' + (applyAllV ? ' checked' : '') + ' />' +
+              '<span class="ssc-checkbox-text">Auf alle Tage anwenden</span>' +
+            '</label>') +
           '</div>' +
         '</div>' +
         '<div class="ssc-form-buttons">' +
