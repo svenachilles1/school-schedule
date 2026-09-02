@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_CHILD_NAME,
+    CONF_IS_BREAK,
     CONF_LESSONS,
     CONF_WEEKDAY,
     CONF_LESSON_NUMBER,
@@ -86,7 +87,8 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         if weekday is None:
             return []
         day_lessons = [
-            lesson for lesson in self.lessons
+            {**lesson, CONF_IS_BREAK: lesson.get(CONF_IS_BREAK, False)}
+            for lesson in self.lessons
             if lesson.get(CONF_WEEKDAY) == weekday
         ]
         return sorted(day_lessons, key=lambda l: l.get(CONF_LESSON_NUMBER, 0))

@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_CHILD_NAME,
+    CONF_IS_BREAK,
     CONF_LESSON_NUMBER,
     CONF_SUBJECT,
     CONF_ROOM,
@@ -109,6 +110,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                 "end_time": lesson.get(CONF_END_TIME, ""),
                 "color": lesson.get(CONF_COLOR, ""),
                 "icon": lesson.get(CONF_ICON, ""),
+                "is_break": lesson.get(CONF_IS_BREAK, False),
             }
             lesson_list.append(lesson_data)
 
@@ -208,6 +210,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "teacher": lesson.get(CONF_TEACHER, ""),
                     "start_time": start,
                     "end_time": end,
+                    "is_break": lesson.get(CONF_IS_BREAK, False),
                 }
         return None
 
@@ -228,5 +231,6 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "teacher": lesson.get(CONF_TEACHER, ""),
                     "start_time": start,
                     "end_time": self._strip_seconds(lesson.get(CONF_END_TIME, "")),
+                    "is_break": lesson.get(CONF_IS_BREAK, False),
                 }
         return None

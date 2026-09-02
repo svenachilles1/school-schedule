@@ -23,6 +23,8 @@ CONF_START_TIME: Final[str] = "start_time"
 CONF_END_TIME: Final[str] = "end_time"
 CONF_COLOR: Final[str] = "color"
 CONF_ICON: Final[str] = "icon"
+CONF_IS_BREAK: Final[str] = "is_break"
+CONF_APPLY_TO_ALL_DAYS: Final[str] = "apply_to_all_days"
 
 # Service names
 SERVICE_ADD_LESSON: Final[str] = "add_lesson"
@@ -42,6 +44,8 @@ ATTR_END_TIME: Final[str] = "end_time"
 ATTR_COLOR: Final[str] = "color"
 ATTR_ICON: Final[str] = "icon"
 ATTR_LESSONS: Final[str] = "lessons"
+ATTR_IS_BREAK: Final[str] = "is_break"
+ATTR_APPLY_TO_ALL_DAYS: Final[str] = "apply_to_all_days"
 
 # Weekdays
 WEEKDAYS: Final[list[str]] = [
@@ -72,6 +76,9 @@ SENSOR_FRIDAY: Final[str] = "freitag"
 # Default values
 DEFAULT_COLOR: Final[str] = "#44739e"
 DEFAULT_ICON: Final[str] = "mdi:school"
+DEFAULT_BREAK_COLOR: Final[str] = "#7a8a99"
+DEFAULT_BREAK_ICON: Final[str] = "mdi:coffee"
+DEFAULT_BREAK_SUBJECT: Final[str] = "Pause"
 
 # Update interval
 UPDATE_INTERVAL_MINUTES: Final[int] = 15

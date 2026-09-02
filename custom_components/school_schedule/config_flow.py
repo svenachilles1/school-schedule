@@ -17,6 +17,8 @@ from .const import (
     CONF_COLOR,
     CONF_END_TIME,
     CONF_ICON,
+    CONF_IS_BREAK,
+    CONF_APPLY_TO_ALL_DAYS,
     CONF_LESSON_NUMBER,
     CONF_LESSONS,
     CONF_ROOM,
@@ -26,6 +28,9 @@ from .const import (
     CONF_WEEKDAY,
     DEFAULT_COLOR,
     DEFAULT_ICON,
+    DEFAULT_BREAK_COLOR,
+    DEFAULT_BREAK_ICON,
+    DEFAULT_BREAK_SUBJECT,
     DOMAIN,
     WEEKDAYS,
 )
@@ -64,7 +69,7 @@ def _lesson_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=1, max=12, mode=selector.NumberSelectorMode.BOX)
             ),
-            vol.Required(
+            vol.Optional(
                 CONF_SUBJECT, default=defaults.get(CONF_SUBJECT, "")
             ): selector.TextSelector(
                 selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
@@ -93,6 +98,12 @@ def _lesson_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_ICON, default=defaults.get(CONF_ICON, DEFAULT_ICON)
             ): selector.IconSelector(selector.IconSelectorConfig()),
+            vol.Optional(
+                CONF_IS_BREAK, default=defaults.get(CONF_IS_BREAK, False)
+            ): selector.BooleanSelector(selector.BooleanSelectorConfig()),
+            vol.Optional(
+                CONF_APPLY_TO_ALL_DAYS, default=defaults.get(CONF_APPLY_TO_ALL_DAYS, False)
+            ): selector.BooleanSelector(selector.BooleanSelectorConfig()),
         }
     )
 
@@ -199,12 +210,33 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if not user_input.get(CONF_SUBJECT):
+            is_break = user_input.get(CONF_IS_BREAK, False)
+            apply_to_all = user_input.get(CONF_APPLY_TO_ALL_DAYS, False)
+
+            if not is_break and not user_input.get(CONF_SUBJECT):
                 errors[CONF_SUBJECT] = "subject_required"
             else:
                 user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
                 user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
-                self._lessons.append(user_input)
+
+                if is_break:
+                    if not user_input.get(CONF_SUBJECT):
+                        user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
+                    if not user_input.get(CONF_COLOR):
+                        user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
+                    if not user_input.get(CONF_ICON):
+                        user_input[CONF_ICON] = DEFAULT_BREAK_ICON
+                    user_input[CONF_ROOM] = ""
+                    user_input[CONF_TEACHER] = ""
+
+                if apply_to_all:
+                    base_lesson = {k: v for k, v in user_input.items() if k != CONF_WEEKDAY}
+                    for day in WEEKDAYS:
+                        lesson = {**base_lesson, CONF_WEEKDAY: day}
+                        self._lessons.append(lesson)
+                else:
+                    self._lessons.append(user_input)
+
                 self._sort_lessons()
                 return await self._save_lessons()
 
@@ -263,9 +295,19 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
         lesson = self._lessons[self._selected_lesson_index]
 
         if user_input is not None:
-            if not user_input.get(CONF_SUBJECT):
+            is_break = user_input.get(CONF_IS_BREAK, False)
+            if not is_break and not user_input.get(CONF_SUBJECT):
                 errors[CONF_SUBJECT] = "subject_required"
             else:
+                if is_break:
+                    if not user_input.get(CONF_SUBJECT):
+                        user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
+                    if not user_input.get(CONF_COLOR):
+                        user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
+                    if not user_input.get(CONF_ICON):
+                        user_input[CONF_ICON] = DEFAULT_BREAK_ICON
+                    user_input[CONF_ROOM] = ""
+                    user_input[CONF_TEACHER] = ""
                 user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
                 user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
                 self._lessons[self._selected_lesson_index] = user_input
