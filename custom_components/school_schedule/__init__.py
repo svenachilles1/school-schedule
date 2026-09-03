@@ -21,6 +21,7 @@ from .const import (
     SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE,
 )
 from .coordinator import SchoolScheduleCoordinator
+from .card_resource import async_setup_card_resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +86,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Register the bundled Lovelace card as a dashboard resource (auto-setup)
+    try:
+        await async_setup_card_resource(hass)
+    except Exception:  # noqa: BLE001 — card registration must never block setup
+        _LOGGER.exception("Failed to set up School Schedule card resource")
 
     # Set up platforms (sensors)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

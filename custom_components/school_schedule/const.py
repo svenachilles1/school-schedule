@@ -83,6 +83,11 @@ DEFAULT_BREAK_SUBJECT: Final[str] = "Pause"
 # Update interval
 UPDATE_INTERVAL_MINUTES: Final[int] = 15
 
+# Lovelace card resource
+CARD_FILE_NAME: Final[str] = "school-schedule-card.js"
+CARD_URL_BASE: Final[str] = "/school_schedule.js"
+LEGACY_CARD_URL_BASE: Final[str] = "/local/school-schedule-card.js"
+
 # Weekday translation keys
 WEEKDAY_TRANSLATION_KEYS: Final[dict[str, str]] = {
     "monday": "weekday_monday",

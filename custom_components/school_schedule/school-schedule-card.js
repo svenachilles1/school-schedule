@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.3.1
+ * School Schedule Card — Ultra Premium v2.4.0
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break)
  */
@@ -1417,7 +1417,9 @@ class SchoolScheduleCard extends HTMLElement {
   }
 }
 
-customElements.define("school-schedule-card", SchoolScheduleCard);
+if (!customElements.get("school-schedule-card")) {
+  customElements.define("school-schedule-card", SchoolScheduleCard);
+}
 
 class SchoolScheduleCardEditor extends HTMLElement {
   setConfig(config) {
@@ -1437,12 +1439,14 @@ class SchoolScheduleCardEditor extends HTMLElement {
   set hass(hass) { this._hass = hass; }
 }
 
-customElements.define("school-schedule-card-editor", SchoolScheduleCardEditor);
+if (!customElements.get("school-schedule-card-editor")) {
+  customElements.define("school-schedule-card-editor", SchoolScheduleCardEditor);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.3.1",
+  description: "Stundenplan-Karte Ultra Premium v2.4.0",
   preview: false,
 });

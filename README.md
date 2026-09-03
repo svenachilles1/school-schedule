@@ -15,6 +15,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Apply to all days:** When adding a lesson or break, optionally apply it to all weekdays (Mon–Fri) at once
 - **Holiday calendar:** German school holidays (mehr-schulferien.de) per federal state with countdown — beach button
 - **Visual card editor:** Height/width configurable via the dashboard editor (no YAML)
+- **Automatic card setup:** The integration registers the Lovelace card resource automatically (browser_mod-style) — no manual `www/` copy, no manual resource registration, automatic cache busting on updates
 
 ### Lovelace Card (Ultra Premium)
 - **3D Glassmorphism** design with animated aurora background
@@ -37,46 +38,28 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 
 ### Via HACS (recommended)
 
-**Step 1 — Install the integration:**
-
 1. Open HACS in your Home Assistant instance
 2. Go to **Integrations** → **+ Explore & Download Repositories**
 3. Search for "School Schedule" and click **Download**
 4. Restart Home Assistant
+5. Go to **Settings** → **Devices & Services** → **Add Integration**
+6. Search for "School Schedule" and enter the child's name
 
-**Step 2 — Install the Lovelace card:**
+That's it — the Lovelace card is set up automatically:
 
-Since this repo ships both an integration and a Lovelace card, you need to register the card as a dashboard resource manually:
-
-1. Copy `school-schedule-card.js` from `custom_components/school_schedule/` to your `<config>/www/` directory
-   - If you installed via HACS, the file is at `<config>/custom_components/school_schedule/school-schedule-card.js`
-   - Copy it to `<config>/www/school-schedule-card.js`
-2. Add a resource in your dashboard settings (**Settings** → **Dashboards** → ⋮ → **Resources** → **+ Add Resource**):
-   ```yaml
-   url: /local/school-schedule-card.js
-   type: module
-   ```
-3. Reload your browser
-
-**Step 3 — Add the integration:**
-
-1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for "School Schedule"
-3. Enter the child's name and confirm
+- The integration serves the bundled card from its own directory and registers the dashboard resource for you (URL: `/school_schedule.js?v=<version>`)
+- No manual copy to `<config>/www/`, no manual resource registration
+- If you previously set up the card manually, the old resource is migrated to the new URL automatically — just reload your browser after the update
+- On every HACS update, the version parameter busts the browser cache automatically
 
 ### Manual
 
 1. Download the latest release from the [releases page](https://github.com/svenachilles1/school-schedule/releases)
 2. Copy `custom_components/school_schedule/` to `<config>/custom_components/school_schedule/`
-3. Copy `school-schedule-card.js` to `<config>/www/school-schedule-card.js`
-4. Add a resource in your dashboard settings:
-   ```yaml
-   resources:
-     - url: /local/school-schedule-card.js
-       type: module
-   ```
-5. Restart Home Assistant
-6. Add the integration via **Settings** → **Devices & Services** → **Add Integration** → "School Schedule"
+3. Restart Home Assistant
+4. Add the integration via **Settings** → **Devices & Services** → **Add Integration** → "School Schedule"
+
+The Lovelace card resource is registered automatically — no copy to `www/` and no resource registration needed.
 
 ## Configuration
 
