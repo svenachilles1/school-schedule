@@ -22,4 +22,4 @@ Via HACS or manually. See [README.md](https://github.com/svenachilles1/school-sc
 
 ## Note
 
-This repository ships both the integration (`custom_components/school_schedule/`) and the Lovelace card (`school-schedule-card.js`). After installing the integration, you also need to register the card as a dashboard resource — see the README for details.
+This repository ships both the integration (`custom_components/school_schedule/`) and the Lovelace card (`school-schedule-card.js`). The card is set up automatically: the integration serves it from its own directory and registers the dashboard resource for you (browser_mod-style). On update, the browser cache is busted automatically.
