@@ -56,7 +56,14 @@ async def async_setup_card_resource(hass: HomeAssistant) -> bool:
     """Serve the bundled card JS and register the Lovelace resource.
 
     Returns True if the resource is available (registered or already present).
+    Safe to call once per config entry — the actual work runs only once per
+    Home Assistant start (multiple children share one card resource).
     """
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get("_card_resource_setup_done"):
+        _LOGGER.debug("Card resource already set up — skipping")
+        return True
+
     card_path = hass.config.path("custom_components", DOMAIN, CARD_FILE_NAME)
     version = await hass.async_add_executor_job(_read_version)
 
@@ -142,4 +149,5 @@ async def async_setup_card_resource(hass: HomeAssistant) -> bool:
         _LOGGER.error("Failed to register School Schedule card resource: %s", err)
         return False
 
+    domain_data["_card_resource_setup_done"] = True
     return True
