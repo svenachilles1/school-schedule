@@ -13,6 +13,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Local push:** Sensors update in real-time when lessons are modified
 - **Break/Pause support:** Mark lessons as breaks — displayed differently (no room/teacher, dashed border, coffee icon) with time info
 - **Apply to all days:** When adding a lesson or break, optionally apply it to all weekdays (Mon–Fri) at once
+- **Holiday calendar:** German school holidays (mehr-schulferien.de) per federal state with countdown — beach button
+- **Visual card editor:** Height/width configurable via the dashboard editor (no YAML)
 
 ### Lovelace Card (Ultra Premium)
 - **3D Glassmorphism** design with animated aurora background
@@ -25,6 +27,10 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Color-coded lessons:** Each lesson has a custom color and icon
 - **Break/Pause rendering:** Breaks shown with dashed border, italic subject, coffee icon — no room/teacher displayed
 - **Break/Pause form:** Checkbox "Als Pause markieren" + "Auf alle Tage anwenden" in the inline add form. Room/teacher auto-disabled for breaks
+- **Holiday calendar:** German school holidays from mehr-schulferien.de — pick your federal state, see current/upcoming holidays with countdown (stored per browser)
+- **Responsive auto-fill columns:** Days flow into the next row automatically on narrow cards — no scrolling
+- **Visual editor:** Set the card's height and width via the dashboard visual editor
+- **Hero section:** Currently running lesson (JETZT) and next lesson (ALS NÄCHSTES)
 - **Responsive:** Adapts to mobile and desktop
 
 ## Installation
