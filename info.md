@@ -10,6 +10,9 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Day view toggle:** Switch between week and day view directly in the card
 - **Inline management:** Add, edit, and delete lessons directly from the card
 - **Hero section:** Shows currently running lesson (JETZT) and next lesson (ALS NÄCHSTES)
+- **Break/Pause support:** Mark lessons as breaks with their own visual style
+- **Holiday calendar:** German school holidays per federal state (mehr-schulferien.de)
+- **Responsive auto-fill columns** and a visual editor for card height/width
 - **Services:** `add_lesson`, `remove_lesson`, `update_lesson`, `get_schedule`
 - **Multi-child:** Each child gets their own schedule
 
