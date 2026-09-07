@@ -1,8 +1,9 @@
 /**
- * School Schedule Card — Ultra Premium v2.4.1
+ * School Schedule Card — Ultra Premium v2.4.2
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
- *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN
+ *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
+ *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion
  */
 
 const HOLIDAY_STATES = [
@@ -42,6 +43,8 @@ class SchoolScheduleCard extends HTMLElement {
     this._holidayData = null;
     this._holidayLoading = false;
     this._holidayState = localStorage.getItem("ssc_holiday_state") || "";
+    this._holidayAutoFetched = false;
+    this._availableChildren = [];
     this._cardLanguage = "";
     this._lang = "de";
     this._shadow = this.attachShadow({ mode: "open" });
@@ -70,6 +73,8 @@ class SchoolScheduleCard extends HTMLElement {
         choose_state: "Bundesland w\u00e4hlen",
         back: "Zur\u00fcck",
         to: "bis",
+        days_until_holiday: "TAGE BIS FERIEN",
+        holiday_days_left: "FERIENTAGE NOCH",
         edit_lesson: "Stunde bearbeiten",
         add_lesson: "Stunde hinzuf\u00fcgen",
         weekday: "Wochentag",
@@ -116,6 +121,8 @@ class SchoolScheduleCard extends HTMLElement {
         choose_state: "Choose a federal state",
         back: "Back",
         to: "to",
+        days_until_holiday: "DAYS UNTIL HOLIDAYS",
+        holiday_days_left: "HOLIDAYS LEFT",
         edit_lesson: "Edit lesson",
         add_lesson: "Add lesson",
         weekday: "Weekday",
@@ -208,6 +215,18 @@ class SchoolScheduleCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     const childName = this._childName || this._config.child_name || "";
     if (!childName) return;
+    // Collect all configured children (for the child switcher)
+    const childSet = new Set();
+    for (const st of Object.values(this._hass.states)) {
+      const at = st.attributes || {};
+      if (at.child_name && Array.isArray(at.lessons)) childSet.add(at.child_name);
+    }
+    this._availableChildren = [...childSet].sort((a, b) => a.localeCompare(b, "de"));
+    // Auto-load holiday data for the countdown (cache first, fetch once)
+    if (this._holidayState && !this._holidayData && !this._holidayAutoFetched) {
+      this._holidayAutoFetched = true;
+      if (!this._loadHolidayCache(this._holidayState)) this._fetchHolidays(this._holidayState);
+    }
     const shortNames = this._t("day_short");
     const fullNames = this._t("day_full");
     const dayMap = {
@@ -271,6 +290,7 @@ class SchoolScheduleCard extends HTMLElement {
 
     switch (action) {
       case "toggle-view": this._toggleViewMode(); break;
+      case "switch-child": this._switchChild(actionEl.dataset.child); break;
       case "toggle-edit": this._toggleEditMode(); break;
       case "toggle-holiday": this._toggleHolidayMode(); break;
       case "select-holiday-state": this._selectHolidayState(actionEl.dataset.state); break;
@@ -330,10 +350,21 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
+  _switchChild(name) {
+    if (!name || name === this._childName) return;
+    this._childName = name;
+    this._showForm = false;
+    this._formData = null;
+    this._confirmDelete = null;
+    const savedView = localStorage.getItem("ssc_view_" + name.toLowerCase());
+    if (savedView === "week" || savedView === "day") this._viewMode = savedView;
+    this._updateData();
+  }
+
   _toggleHolidayMode() {
     this._holidayMode = !this._holidayMode;
     if (this._holidayMode && !this._holidayData && this._holidayState) {
-      this._fetchHolidays(this._holidayState);
+      if (!this._loadHolidayCache(this._holidayState)) this._fetchHolidays(this._holidayState);
     }
     this._render();
   }
@@ -351,21 +382,47 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
+  _loadHolidayCache(stateSlug) {
+    try {
+      const raw = localStorage.getItem("ssc_holiday_cache_" + stateSlug);
+      if (!raw) return false;
+      const cache = JSON.parse(raw);
+      if (!cache || cache.state !== stateSlug) return false;
+      if (cache.date !== new Date().toISOString().slice(0, 10)) return false;
+      if (!Array.isArray(cache.data)) return false;
+      this._holidayData = cache.data;
+      return true;
+    } catch(e) { return false; }
+  }
+
   async _fetchHolidays(stateSlug) {
     this._holidayLoading = true;
     this._render();
+    const periods = [];
+    const fetchYear = async (y) => {
+      try {
+        const resp = await fetch("https://www.mehr-schulferien.de/api/v2.1/federal-states/" + stateSlug + "/periods?year=" + y);
+        if (!resp.ok) return;
+        const json = await resp.json();
+        for (const p of (json.data || [])) {
+          if (p.is_school_vacation) periods.push(p);
+        }
+      } catch(e) { /* ignore single-year failures */ }
+    };
+    const year = new Date().getFullYear();
+    await fetchYear(year);
+    await fetchYear(year + 1);
+    periods.sort((a, b) => String(a.starts_on).localeCompare(String(b.starts_on)));
+    this._holidayData = periods;
+    this._holidayLoading = false;
     try {
-      const year = new Date().getFullYear();
-      const resp = await fetch("https://www.mehr-schulferien.de/api/v2.1/federal-states/" + stateSlug + "/periods?year=" + year);
-      const json = await resp.json();
-      this._holidayData = (json.data || []).filter(p => p.is_school_vacation);
-      this._holidayLoading = false;
-      this._render();
-    } catch(e) {
-      this._holidayLoading = false;
-      this._holidayData = [];
-      this._render();
-    }
+      localStorage.setItem("ssc_holiday_cache_" + stateSlug, JSON.stringify({
+        date: new Date().toISOString().slice(0, 10),
+        state: stateSlug,
+        data: periods,
+      }));
+    } catch(e) { /* storage full — ignore */ }
+    this._render();
   }
 
   _isInHoliday(dateStr) {
@@ -375,6 +432,23 @@ class SchoolScheduleCard extends HTMLElement {
       if (today >= h.starts_on && today <= h.ends_on) return h;
     }
     return false;
+  }
+
+  _getHolidayCountdown() {
+    if (!this._holidayData || this._holidayData.length === 0) return null;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const today = new Date(todayStr + "T00:00:00");
+    const current = this._isInHoliday(todayStr);
+    if (current) {
+      const end = new Date(current.ends_on + "T00:00:00");
+      return { mode: "current", days: Math.max(0, Math.round((end - today) / 86400000)), name: current.name, ends_on: current.ends_on };
+    }
+    const upcoming = this._holidayData
+      .filter(h => String(h.starts_on) > todayStr)
+      .sort((a, b) => String(a.starts_on).localeCompare(String(b.starts_on)))[0];
+    if (!upcoming) return null;
+    const start = new Date(upcoming.starts_on + "T00:00:00");
+    return { mode: "upcoming", days: Math.max(0, Math.round((start - today) / 86400000)), name: upcoming.name, starts_on: upcoming.starts_on };
   }
 
   _formatDate(dateStr) {
@@ -594,14 +668,47 @@ class SchoolScheduleCard extends HTMLElement {
 
   // === Render ===
 
+  _renderChildSwitch() {
+    if (!this._availableChildren || this._availableChildren.length < 2) return "";
+    let html = '<div class="ssc-child-switch">';
+    for (const name of this._availableChildren) {
+      html += '<button class="ssc-child-pill' + (name === this._childName ? " ssc-child-active" : "") +
+        '" data-action="switch-child" data-child="' + name + '" title="' + name + '">' + name + '</button>';
+    }
+    return html + '</div>';
+  }
+
+  _renderHolidayCountdownPill() {
+    const cd = this._getHolidayCountdown();
+    const grad = "background:linear-gradient(135deg,#ffb74d,#ff9800);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text";
+    if (cd) {
+      return '<div class="hero-stat hero-holiday" data-action="toggle-holiday">' +
+        '<div class="hero-stat-num" style="' + grad + '">' + cd.days + '</div>' +
+        '<div class="hero-stat-label">' + this._t(cd.mode === "current" ? "holiday_days_left" : "days_until_holiday") + '</div>' +
+        '<div class="hero-holiday-name" title="' + cd.name + '">' + cd.name + '</div>' +
+      '</div>';
+    }
+    return '<div class="hero-stat hero-holiday" data-action="toggle-holiday" title="' + this._t("choose_state") + '">' +
+      '<div class="hero-stat-num" style="color:var(--disabled-text-color,rgba(255,255,255,0.15))">-</div>' +
+      '<div class="hero-stat-label">' + this._t("days_until_holiday") + '</div>' +
+      '<div class="hero-holiday-name">' + this._t("choose_state") + '</div>' +
+    '</div>';
+  }
+
   _render() {
     if (!this._days || Object.keys(this._days).length === 0) {
-      this._shadow.innerHTML = '<ha-card style="padding:16px;color:var(--secondary-text-color)">' + this._t("no_data") + '</ha-card>';
+      const switchHtml = this._renderChildSwitch();
+      this._shadow.innerHTML =
+        '<ha-card style="padding:16px;color:var(--secondary-text-color)">' +
+          (switchHtml ? '<div style="padding:0 0 12px">' + switchHtml + '</div>' : "") +
+          this._t("no_data") +
+        '</ha-card>';
       return;
     }
 
     const childName = this._childName || "";
     const dayOrder = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+    const childSwitchHtml = this._renderChildSwitch();
     let todayLessons = 0, currentLesson = null, nextLesson = null;
     if (this._today) {
       todayLessons = this._today.lessons.length;
@@ -654,6 +761,8 @@ class SchoolScheduleCard extends HTMLElement {
           '<div class="hero-stat-label">' + this._t("next_label") + '</div>' +
         '</div>';
       }
+
+      heroPills += this._renderHolidayCountdownPill();
 
       heroHtml = '<div class="hero">' + heroPills + '</div>';
     }
@@ -712,6 +821,7 @@ class SchoolScheduleCard extends HTMLElement {
             '</div>' +
             actionsHtml +
           '</div>' +
+          childSwitchHtml +
           heroHtml +
           '<div class="content-scroll">' + contentHtml + '</div>' +
         '</div>' +
@@ -1158,6 +1268,47 @@ class SchoolScheduleCard extends HTMLElement {
       }
       .ssc-btn-danger:hover {
         box-shadow: 0 6px 20px color-mix(in srgb, #f44336 15%, transparent);
+      }
+
+      /* === Child switcher === */
+      .ssc-child-switch {
+        display: flex; gap: 6px; flex-wrap: wrap; width: fit-content;
+        padding: 4px; margin-bottom: 14px;
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--card-background-color, #111118) 60%, transparent);
+        backdrop-filter: blur(12px);
+        border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 10%, transparent);
+      }
+      .ssc-child-pill {
+        padding: 6px 16px; border-radius: 10px;
+        background: transparent; border: 1px solid transparent;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+        font-size: 0.72em; font-weight: 700; cursor: pointer; white-space: nowrap;
+        transition: border-color 0.2s, background 0.2s, color 0.2s;
+      }
+      .ssc-child-pill:hover {
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 30%, transparent);
+        color: var(--primary-text-color, #fff);
+      }
+      .ssc-child-active {
+        background: color-mix(in srgb, var(--primary-color, #7c4dff) 18%, transparent);
+        border-color: color-mix(in srgb, var(--primary-color, #7c4dff) 40%, transparent);
+        color: var(--primary-text-color, #fff);
+      }
+
+      /* === Holiday countdown pill === */
+      .hero-holiday {
+        cursor: pointer;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+      .hero-holiday:hover {
+        border-color: color-mix(in srgb, #ff9800 40%, transparent);
+        box-shadow: 0 4px 16px color-mix(in srgb, #ff9800 12%, transparent);
+      }
+      .hero-holiday-name {
+        font-size: 0.6em; font-weight: 700; margin-top: 2px;
+        color: #ffb74d;
+        max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
 
       /* === Hero summary === */
@@ -1621,6 +1772,8 @@ class SchoolScheduleCard extends HTMLElement {
         .lc-content { padding: 6px 8px; }
         .ssc-actions { gap: 4px; }
         .ssc-btn { padding: 6px 10px; font-size: 0.6em; }
+        .ssc-child-pill { padding: 5px 12px; font-size: 0.62em; }
+        .hero-holiday-name { max-width: 90px; font-size: 0.55em; }
         .grid.day-view .lc-content { padding: 8px 10px; }
         .grid.day-view .lc-subject { font-size: 0.78em; }
       }
@@ -1750,6 +1903,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.4.1",
+  description: "Stundenplan-Karte Ultra Premium v2.4.2",
   preview: false,
 });

@@ -20,6 +20,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 ### Lovelace Card (Ultra Premium)
 - **3D Glassmorphism** design with animated aurora background
 - **Hero section:** Shows currently running lesson (JETZT) and next lesson (ALS NÄCHSTES) with pulsing indicator
+- **Child switcher:** Switch between all configured children directly in the card (segmented control) — one card instead of one per child
+- **Holiday countdown:** Hero pill shows "days until holidays" (or remaining vacation days) — data from mehr-schulferien.de, click to open the holiday calendar
 - **Day view toggle:** Switch between week view (5-column grid) and day view (single column, larger cards) via button
 - **Inline management:** Add, edit, and delete lessons directly from the card — no need to open the config flow
   - **Add:** "+" button per day opens inline form
