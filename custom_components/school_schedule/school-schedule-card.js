@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.4.3
+ * School Schedule Card — Ultra Premium v2.4.4
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
@@ -382,6 +382,17 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
+  _dedupePeriods(periods) {
+    const seen = new Set();
+    const out = [];
+    for (const p of (periods || [])) {
+      if (!p || !p.is_school_vacation) continue;
+      const key = String(p.starts_on) + "|" + String(p.ends_on) + "|" + String(p.name);
+      if (!seen.has(key)) { seen.add(key); out.push(p); }
+    }
+    return out;
+  }
+
   _loadHolidayCache(stateSlug) {
     try {
       const raw = localStorage.getItem("ssc_holiday_cache_" + stateSlug);
@@ -390,7 +401,8 @@ class SchoolScheduleCard extends HTMLElement {
       if (!cache || cache.state !== stateSlug) return false;
       if (cache.date !== new Date().toISOString().slice(0, 10)) return false;
       if (!Array.isArray(cache.data)) return false;
-      this._holidayData = cache.data;
+      // Dedupe auch beim Cache-Load (v2.4.2 konnte Duplikate in den Cache geschrieben haben)
+      this._holidayData = this._dedupePeriods(cache.data);
       return true;
     } catch(e) { return false; }
   }
@@ -405,19 +417,15 @@ class SchoolScheduleCard extends HTMLElement {
         if (!resp.ok) return;
         const json = await resp.json();
         for (const p of (json.data || [])) {
-          if (!p || !p.is_school_vacation) continue;
-          // Dedupe: API kann denselben Zeitraum in mehreren Abfragen liefern
-          const key = String(p.starts_on) + "|" + String(p.ends_on) + "|" + String(p.name);
-          if (!seenKeys.has(key)) { seenKeys.add(key); periods.push(p); }
+          if (p && p.is_school_vacation) periods.push(p);
         }
       } catch(e) { /* ignore single-year failures */ }
     };
-    const seenKeys = new Set();
     const year = new Date().getFullYear();
     await fetchYear(year);
     await fetchYear(year + 1);
     periods.sort((a, b) => String(a.starts_on).localeCompare(String(b.starts_on)));
-    this._holidayData = periods;
+    this._holidayData = this._dedupePeriods(periods);
     this._holidayLoading = false;
     try {
       localStorage.setItem("ssc_holiday_cache_" + stateSlug, JSON.stringify({
@@ -1907,6 +1915,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.4.3",
+  description: "Stundenplan-Karte Ultra Premium v2.4.4",
   preview: false,
 });
