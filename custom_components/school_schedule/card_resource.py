@@ -63,6 +63,10 @@ async def async_setup_card_resource(hass: HomeAssistant) -> bool:
     if domain_data.get("_card_resource_setup_done"):
         _LOGGER.debug("Card resource already set up — skipping")
         return True
+    # Set the guard BEFORE any await — asyncio runs on a single event loop,
+    # so this is atomic and prevents parallel config entries (one per child)
+    # from both registering the static route at HA startup.
+    domain_data["_card_resource_setup_done"] = True
 
     card_path = hass.config.path("custom_components", DOMAIN, CARD_FILE_NAME)
     version = await hass.async_add_executor_job(_read_version)
@@ -147,7 +151,8 @@ async def async_setup_card_resource(hass: HomeAssistant) -> bool:
             )
     except HomeAssistantError as err:
         _LOGGER.error("Failed to register School Schedule card resource: %s", err)
+        # Roll back the guard so a later entry setup (or reload) can retry.
+        domain_data["_card_resource_setup_done"] = False
         return False
 
-    domain_data["_card_resource_setup_done"] = True
     return True
