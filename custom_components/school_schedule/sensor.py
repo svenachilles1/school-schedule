@@ -210,6 +210,8 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "teacher": lesson.get(CONF_TEACHER, ""),
                     "start_time": start,
                     "end_time": end,
+                    "color": lesson.get(CONF_COLOR, ""),
+                    "icon": lesson.get(CONF_ICON, ""),
                     "is_break": lesson.get(CONF_IS_BREAK, False),
                 }
         return None
@@ -231,6 +233,8 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "teacher": lesson.get(CONF_TEACHER, ""),
                     "start_time": start,
                     "end_time": self._strip_seconds(lesson.get(CONF_END_TIME, "")),
+                    "color": lesson.get(CONF_COLOR, ""),
+                    "icon": lesson.get(CONF_ICON, ""),
                     "is_break": lesson.get(CONF_IS_BREAK, False),
                 }
         return None
