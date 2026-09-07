@@ -15,6 +15,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Responsive auto-fill columns** and a visual editor for card height/width
 - **Services:** `add_lesson`, `remove_lesson`, `update_lesson`, `get_schedule`
 - **Multi-child:** Each child gets their own schedule
+- **Child switcher:** Switch between children directly in the card
+- **Holiday countdown:** Days until the next school holidays in the hero section
 
 ## Installation
 
