@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.4.2
+ * School Schedule Card — Ultra Premium v2.4.3
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
@@ -405,10 +405,14 @@ class SchoolScheduleCard extends HTMLElement {
         if (!resp.ok) return;
         const json = await resp.json();
         for (const p of (json.data || [])) {
-          if (p.is_school_vacation) periods.push(p);
+          if (!p || !p.is_school_vacation) continue;
+          // Dedupe: API kann denselben Zeitraum in mehreren Abfragen liefern
+          const key = String(p.starts_on) + "|" + String(p.ends_on) + "|" + String(p.name);
+          if (!seenKeys.has(key)) { seenKeys.add(key); periods.push(p); }
         }
       } catch(e) { /* ignore single-year failures */ }
     };
+    const seenKeys = new Set();
     const year = new Date().getFullYear();
     await fetchYear(year);
     await fetchYear(year + 1);
@@ -1903,6 +1907,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.4.2",
+  description: "Stundenplan-Karte Ultra Premium v2.4.3",
   preview: false,
 });
