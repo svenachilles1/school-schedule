@@ -4,6 +4,22 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 
 ![School Schedule Card](brand/icon.png)
 
+## Screenshots
+
+**Ultra Premium Card — week view, day view, holiday calendar, edit mode, child switcher:**
+
+![Demo](screenshots/demo.gif)
+
+| Week view (EN) | Day view |
+|---|---|
+| ![Week view](screenshots/week-en.png) | ![Day view](screenshots/day-en.png) |
+
+| Holiday calendar (DE) | Edit mode + inline form |
+|---|---|
+| ![Holidays](screenshots/holidays-de.png) | ![Edit](screenshots/edit-en.png) |
+
+*All screenshots use anonymized demo data. The card auto-detects your HA theme colors.*
+
 ## Features
 
 ### Integration
