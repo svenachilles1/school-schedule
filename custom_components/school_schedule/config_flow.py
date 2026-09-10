@@ -1,6 +1,7 @@
 """Config flow for School Schedule integration."""
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from typing import Any
@@ -164,7 +165,12 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self._lessons: list[dict[str, Any]] = list(
+        # Deep copy — same aliasing trap as the coordinator: a shallow
+        # list() shares lesson dicts with entry.data, so editing a lesson
+        # here mutates entry.data directly and the later
+        # async_update_entry(new_data) becomes a no-op (HA skips saving
+        # unchanged data). Detached copies keep the write real (v2.5.2).
+        self._lessons: list[dict[str, Any]] = copy.deepcopy(
             config_entry.data.get(CONF_LESSONS, [])
         )
         self._selected_lesson_index: int | None = None
@@ -390,7 +396,7 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def _save_lessons(self) -> FlowResult:
         """Save lessons to the config entry and update coordinator."""
-        new_data = {**self.config_entry.data, CONF_LESSONS: self._lessons}
+        new_data = {**self.config_entry.data, CONF_LESSONS: copy.deepcopy(self._lessons)}
         # NOTE: reload_on_update was removed in HA 2026.8.x — do NOT pass it.
         self.hass.config_entries.async_update_entry(
             self.config_entry, data=new_data
