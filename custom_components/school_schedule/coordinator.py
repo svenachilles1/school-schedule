@@ -182,7 +182,21 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
                 # dict guarantees new_data differs from the previously
                 # persisted entry.data even if all field values are equal
                 # (second line of defence behind the deep copy in __init__).
-                self.lessons[idx] = {**lesson, **updates}
+                new_lesson = {**lesson, **updates}
+                if new_lesson == lesson:
+                    # No-op save: every submitted value matches the stored
+                    # lesson. Nothing changed, nothing to persist — HA's
+                    # async_update_entry would skip the write anyway
+                    # (new_data == entry.data). Detect it here so the
+                    # anomaly guard in _persist_lessons stays reserved for
+                    # real regressions (v2.5.3).
+                    _LOGGER.debug(
+                        "update_lesson: no changes for %s lesson %s — nothing to persist",
+                        weekday,
+                        lesson_number,
+                    )
+                    return True
+                self.lessons[idx] = new_lesson
                 self._sort_lessons()
                 await self._persist_lessons()
                 self.async_set_updated_data(self._build_schedule_data())
@@ -213,15 +227,16 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         )
         # Update entry reference but keep self.lessons as-is (we just wrote them).
         if not changed:
-            # async_update_entry returns False when new_data == entry.data —
-            # with the deep copies above this can only mean a real no-op
-            # (identical values). Persist explicitly anyway: equality on the
-            # in-memory dict is NOT proof the .storage file already holds
-            # this state (e.g. after a failed save). Log loudly instead of
-            # silently losing the edit (v2.5.2).
+            # Should be unreachable: update_lesson short-circuits no-op
+            # saves before calling this, and the deep copies above keep
+            # self.lessons fully detached from entry.data. If this fires
+            # right after a real lesson change, the persistence isolation
+            # has regressed — the edit would NOT survive a restart
+            # (the v2.5.1 bug). ERROR so it is impossible to miss (v2.5.3).
             _LOGGER.error(
-                "Persist skipped: lesson data identical to entry data for %s "
-                "(%d lessons) — verifying storage is expected to match",
+                "Persist skipped for %s: lesson data identical to entry data "
+                "(%d lessons) — persistence isolation may have regressed, "
+                "lesson edits would NOT survive a restart",
                 self.child_name,
                 len(self.lessons),
             )

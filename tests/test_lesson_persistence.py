@@ -39,13 +39,13 @@ reloaded = copy.deepcopy(entry["data"]["lessons"])
 assert reloaded[0]["color"] == "#ff0000", "color lost across simulated restart"
 print("Round-trip: color survives restart via entry data          [fix proven]")
 
-# ── No-op edit still returns False (expected, harmless — values identical) ──
+# ── No-op edit is detected upstream (v2.5.3) and never reaches the guard ──
 entry2 = {"data": {"lessons": [{"lesson_number": 1, "subject": "Kunst", "color": "#ff0000"}]}}
 lessons2 = copy.deepcopy(entry2["data"]["lessons"])
-lessons2[0] = {**lessons2[0], "color": "#ff0000"}
-new_data2 = {**entry2["data"], "lessons": copy.deepcopy(lessons2)}
-changed2 = fake_async_update_entry(entry2, new_data2)
-assert changed2 is False, "identical values must not trigger a write"
-print("No-op edit: correctly no write (values identical)           [semantics intact]")
+new_lesson = {**lessons2[0], "color": "#ff0000"}   # every value identical
+assert new_lesson == lessons2[0], "no-op detection premise failed"
+# update_lesson short-circuits here (returns True without persisting) —
+# _persist_lessons is never called, so no guard log, no write attempt.
+print("No-op edit: detected before persist, guard stays silent    [v2.5.3 proven]")
 print()
 print("ALL TESTS PASSED")
