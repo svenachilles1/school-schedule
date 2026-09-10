@@ -31,6 +31,18 @@ class SchoolScheduleEntity(CoordinatorEntity):
         )
 
     @property
+    def suggested_object_id(self) -> str:
+        """Deterministic entity IDs — no registry surprises.
+
+        Without this HA derives the object id from the device name at
+        registration time, which produced inconsistent ids like
+        ``binary_sensor.michelle_stundenplan_michelle_schulfrei`` for
+        freshly added entities. With this override every entity is
+        registered as ``stundenplan_<child>_<sensor_type>`` from day one.
+        """
+        return f"stundenplan_{self._child_name.lower()}_{self._sensor_type}"
+
+    @property
     def available(self) -> bool:
         """Return if entity is available."""
         return self.coordinator.last_update_success
