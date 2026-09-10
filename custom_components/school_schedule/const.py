@@ -7,7 +7,7 @@ from typing import Final
 DOMAIN: Final[str] = "school_schedule"
 
 # Platform types
-PLATFORMS: Final[list[str]] = ["sensor"]
+PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor"]
 
 # Configuration data fields
 CONF_CHILD_NAME: Final[str] = "child_name"
@@ -96,3 +96,52 @@ WEEKDAY_TRANSLATION_KEYS: Final[dict[str, str]] = {
     "thursday": "weekday_thursday",
     "friday": "weekday_friday",
 }
+
+# ─── Holidays / school-free days (v2.5.0) ─────────────────────────────
+CONF_FEDERAL_STATE: Final[str] = "federal_state"
+CONF_HOLIDAYS: Final[str] = "holidays"          # cached API payload in entry data
+CONF_HOLIDAYS_UPDATED_AT: Final[str] = "holidays_updated_at"
+
+DEFAULT_FEDERAL_STATE: Final[str] = "thueringen"
+
+# mehr-schulferien.de API v2.1
+API_BASE_URL: Final[str] = "https://www.mehr-schulferien.de/api/v2.1"
+API_TIMEOUT_SECONDS: Final[int] = 15
+
+# German federal states (matching the card's slug list)
+FEDERAL_STATES: Final[dict[str, str]] = {
+    "baden-wuerttemberg": "Baden-Württemberg",
+    "bayern": "Bayern",
+    "berlin": "Berlin",
+    "brandenburg": "Brandenburg",
+    "bremen": "Bremen",
+    "hamburg": "Hamburg",
+    "hessen": "Hessen",
+    "mecklenburg-vorpommern": "Mecklenburg-Vorpommern",
+    "niedersachsen": "Niedersachsen",
+    "nordrhein-westfalen": "Nordrhein-Westfalen",
+    "rheinland-pfalz": "Rheinland-Pfalz",
+    "saarland": "Saarland",
+    "sachsen": "Sachsen",
+    "sachsen-anhalt": "Sachsen-Anhalt",
+    "schleswig-holstein": "Schleswig-Holstein",
+    "thueringen": "Thüringen",
+}
+
+# Service names (holidays)
+SERVICE_SET_FEDERAL_STATE: Final[str] = "set_federal_state"
+
+# Service fields (holidays)
+ATTR_FEDERAL_STATE: Final[str] = "federal_state"
+
+# Day status values
+STATUS_SCHOOL_DAY: Final[str] = "school_day"
+STATUS_VACATION: Final[str] = "vacation"
+STATUS_PUBLIC_HOLIDAY: Final[str] = "public_holiday"
+STATUS_WEEKEND: Final[str] = "weekend"
+
+# Binary sensor types
+BSENSOR_SCHULFREI: Final[str] = "schulfrei"
+
+# Holiday refresh interval (API cache in entry data, refreshed by coordinator)
+HOLIDAY_REFRESH_HOURS: Final[int] = 24

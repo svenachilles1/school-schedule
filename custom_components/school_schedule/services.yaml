@@ -265,3 +265,55 @@ get_schedule:
               value: thursday
             - label: Freitag
               value: friday
+
+set_federal_state:
+  name: Bundesland festlegen
+  description: Legt das Bundesland für die Ferien- und Feiertagsberechnung fest.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Michelle
+      selector:
+        text:
+    federal_state:
+      name: Bundesland
+      description: Deutsches Bundesland (Slug, z.B. thueringen).
+      required: true
+      example: thueringen
+      selector:
+        select:
+          options:
+            - label: Baden-Württemberg
+              value: baden-wuerttemberg
+            - label: Bayern
+              value: bayern
+            - label: Berlin
+              value: berlin
+            - label: Brandenburg
+              value: brandenburg
+            - label: Bremen
+              value: bremen
+            - label: Hamburg
+              value: hamburg
+            - label: Hessen
+              value: hessen
+            - label: Mecklenburg-Vorpommern
+              value: mecklenburg-vorpommern
+            - label: Niedersachsen
+              value: niedersachsen
+            - label: Nordrhein-Westfalen
+              value: nordrhein-westfalen
+            - label: Rheinland-Pfalz
+              value: rheinland-pfalz
+            - label: Saarland
+              value: saarland
+            - label: Sachsen
+              value: sachsen
+            - label: Sachsen-Anhalt
+              value: sachsen-anhalt
+            - label: Schleswig-Holstein
+              value: schleswig-holstein
+            - label: Thüringen
+              value: thueringen
