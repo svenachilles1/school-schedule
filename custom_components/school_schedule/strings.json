@@ -22,6 +22,13 @@
           "action": "Aktion"
         }
       },
+      "settings": {
+        "title": "Einstellungen",
+        "description": "Bundesland für Ferien und Feiertage festlegen.",
+        "data": {
+          "federal_state": "Bundesland"
+        }
+      },
       "add_lesson": {
         "title": "Stunde hinzufügen",
         "description": "Füge eine neue Stunde zum Stundenplan hinzu.",
@@ -71,6 +78,7 @@
         "add": "Stunde hinzufügen",
         "edit": "Stunde bearbeiten",
         "remove": "Stunde entfernen",
+        "settings": "Einstellungen (Bundesland)",
         "view": "Stundenplan ansehen"
       }
     }
@@ -91,6 +99,10 @@
     "get_schedule": {
       "name": "Stundenplan abrufen",
       "description": "Ruft den Stundenplan für einen Wochentag ab."
+    },
+    "set_federal_state": {
+      "name": "Bundesland festlegen",
+      "description": "Legt das Bundesland für Ferien- und Feiertagsberechnung fest."
     }
   }
 }

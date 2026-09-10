@@ -52,3 +52,10 @@ jobs:
                       print(f'  {f} OK')
           print('Python syntax valid ✅')
           "
+      - name: Unit tests (holiday logic)
+        run: |
+          python3 tests/test_holiday_logic.py
+      - name: Binary sensor platform present
+        run: |
+          test -f custom_components/school_schedule/binary_sensor.py
+          echo "binary_sensor platform present ✅"

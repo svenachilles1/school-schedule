@@ -16,12 +16,15 @@ from .const import (
     CONF_WEEKDAY, CONF_LESSON_NUMBER, CONF_SUBJECT,
     CONF_ROOM, CONF_TEACHER, CONF_START_TIME, CONF_END_TIME,
     CONF_COLOR, CONF_ICON, CONF_IS_BREAK, CONF_APPLY_TO_ALL_DAYS,
+    CONF_FEDERAL_STATE, FEDERAL_STATES,
     WEEKDAYS, DEFAULT_COLOR, DEFAULT_ICON,
     DEFAULT_BREAK_COLOR, DEFAULT_BREAK_ICON, DEFAULT_BREAK_SUBJECT,
     SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE,
+    SERVICE_SET_FEDERAL_STATE,
 )
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
+from .holidays import federal_state_from_entry, release_holidays_coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +66,11 @@ UPDATE_LESSON_SCHEMA = vol.Schema({
 GET_SCHEDULE_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Optional("weekday"): vol.In(WEEKDAYS),
+})
+
+SET_FEDERAL_STATE_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("federal_state"): vol.In(FEDERAL_STATES),
 })
 
 
@@ -169,10 +177,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             schedule = coordinator.get_schedule(call.data.get("weekday"))
             _LOGGER.info("Schedule for %s: %s", child_name, schedule)
 
+        async def handle_set_federal_state(call: ServiceCall) -> None:
+            """Handle set_federal_state service call."""
+            child_name = call.data["child_name"]
+            federal_state = call.data["federal_state"]
+            coordinator = _find_coordinator(hass, child_name)
+            old_state = federal_state_from_entry(coordinator.entry)
+            _LOGGER.info(
+                "set_federal_state called: %s %s -> %s",
+                child_name, old_state, federal_state,
+            )
+
+            # Persist into the config entry (no reload — reload_on_update
+            # no longer exists in HA 2026.8.x anyway).
+            new_data = {**coordinator.entry.data, CONF_FEDERAL_STATE: federal_state}
+            hass.config_entries.async_update_entry(
+                coordinator.entry, data=new_data
+            )
+            coordinator._refresh_entry_ref()
+
+            # Re-bind the entry to the (possibly different) shared coordinator.
+            from .holidays import get_holidays_coordinator
+            if federal_state != old_state:
+                # Release the reference to the old state's coordinator first
+                # (otherwise its refcount leaks until the next HA restart).
+                release_holidays_coordinator(hass, old_state)
+            coordinator.holidays = get_holidays_coordinator(hass, federal_state)
+            coordinator.holidays.async_setup_with_entry(coordinator.entry)
+            # Force a fresh fetch so the new state's data is available
+            # immediately (falls back to empty cache gracefully if offline).
+            await coordinator.holidays.async_ensure_current(force=True)
+            if coordinator.holidays.dirty:
+                coordinator.holidays.persist_into(coordinator.entry)
+                coordinator.holidays.dirty = False
+                coordinator._refresh_entry_ref()
+            coordinator.async_set_updated_data(coordinator._build_schedule_data())
+            _LOGGER.info(
+                "Federal state for %s is now %s", child_name, federal_state
+            )
+
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_SET_FEDERAL_STATE, handle_set_federal_state, schema=SET_FEDERAL_STATE_SCHEMA)
         _LOGGER.info("School Schedule services registered")
 
     return True
@@ -185,9 +233,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
+        # Release the shared holiday coordinator reference BEFORE popping
+        # the entry from hass.data (release reads hass.data[DOMAIN]).
+        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if isinstance(coordinator, SchoolScheduleCoordinator):
+            release_holidays_coordinator(hass, coordinator.holidays.federal_state)
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        if not hass.data[DOMAIN]:
-            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE]:
+        # Only count real coordinators — the dict also holds housekeeping
+        # keys (_card_resource_setup_done, holidays) that must not keep
+        # the services alive after the last child was unloaded.
+        remaining = [
+            v for v in hass.data[DOMAIN].values()
+            if isinstance(v, SchoolScheduleCoordinator)
+        ]
+        if not remaining:
+            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE]:
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
 

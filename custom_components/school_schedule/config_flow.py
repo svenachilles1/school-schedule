@@ -26,12 +26,15 @@ from .const import (
     CONF_SUBJECT,
     CONF_TEACHER,
     CONF_WEEKDAY,
+    CONF_FEDERAL_STATE,
     DEFAULT_COLOR,
     DEFAULT_ICON,
     DEFAULT_BREAK_COLOR,
     DEFAULT_BREAK_ICON,
     DEFAULT_BREAK_SUBJECT,
+    DEFAULT_FEDERAL_STATE,
     DOMAIN,
+    FEDERAL_STATES,
     WEEKDAYS,
 )
 
@@ -181,6 +184,8 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
             if action == "remove":
                 self._is_removing = True
                 return await self.async_step_select_lesson()
+            if action == "settings":
+                return await self.async_step_settings()
 
         return self.async_show_form(
             step_id="init",
@@ -192,6 +197,7 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
                                 selector.SelectOptionDict(value="add", label="Stunde hinzufuegen"),
                                 selector.SelectOptionDict(value="edit", label="Stunde bearbeiten"),
                                 selector.SelectOptionDict(value="remove", label="Stunde entfernen"),
+                                selector.SelectOptionDict(value="settings", label="Einstellungen (Bundesland)"),
                             ],
                             mode=selector.SelectSelectorMode.LIST,
                         )
@@ -201,6 +207,59 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders={
                 "child_name": self.config_entry.data.get(CONF_CHILD_NAME, ""),
             },
+        )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage holiday settings (federal state)."""
+        if user_input is not None:
+            federal_state = user_input.get(CONF_FEDERAL_STATE)
+            if federal_state:
+                # Persist into the entry data and refresh the coordinator.
+                from .holidays import (
+                    get_holidays_coordinator,
+                    release_holidays_coordinator,
+                )
+
+                old_state = self.config_entry.data.get(CONF_FEDERAL_STATE, DEFAULT_FEDERAL_STATE)
+                new_data = {
+                    **self.config_entry.data,
+                    CONF_FEDERAL_STATE: federal_state,
+                }
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=new_data
+                )
+                coordinator = self.hass.data.get(DOMAIN, {}).get(
+                    self.config_entry.entry_id
+                )
+                if coordinator and hasattr(coordinator, "holidays"):
+                    if federal_state != old_state:
+                        release_holidays_coordinator(self.hass, old_state)
+                    coordinator.holidays = get_holidays_coordinator(
+                        self.hass, federal_state
+                    )
+                    coordinator.holidays.async_setup_with_entry(self.config_entry)
+                return self.async_create_entry(title="", data={})
+
+        current = self.config_entry.data.get(CONF_FEDERAL_STATE, DEFAULT_FEDERAL_STATE)
+        return self.async_show_form(
+            step_id="settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_FEDERAL_STATE, default=current): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=slug, label=name)
+                                for slug, name in sorted(
+                                    FEDERAL_STATES.items(), key=lambda kv: kv[1]
+                                )
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
         )
 
     async def async_step_add_lesson(

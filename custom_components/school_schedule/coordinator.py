@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -18,6 +18,16 @@ from .const import (
     DOMAIN,
     UPDATE_INTERVAL_MINUTES,
     WEEKDAYS,
+)
+from .holiday_logic import (
+    day_status,
+    next_event,
+    next_school_day,
+)
+from .holidays import (
+    SharedHolidaysCoordinator,
+    federal_state_from_entry,
+    get_holidays_coordinator,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +45,12 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.child_name: str = entry.data.get(CONF_CHILD_NAME, "")
         self.lessons: list[dict[str, Any]] = list(entry.data.get(CONF_LESSONS, []))
+        # Shared holiday data for this entry's federal state (one instance
+        # per state — all children in the same state share the API fetch).
+        self.holidays: SharedHolidaysCoordinator = get_holidays_coordinator(
+            hass, federal_state_from_entry(entry)
+        )
+        self.holidays.async_setup_with_entry(entry)
         _LOGGER.info("Coordinator init: loaded %d lessons for %s", len(self.lessons), self.child_name)
 
         super().__init__(
@@ -57,15 +73,31 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         if updated is not None:
             self.entry = updated
             self.lessons = list(updated.data.get(CONF_LESSONS, []))
+
+        # Refresh holiday data if stale (at most one API request per 24h
+        # per federal state — shared between all children in that state).
+        # Falls back to the entry-cached periods when the API is offline.
+        if await self.holidays.async_ensure_current():
+            if self.holidays.dirty:
+                self.holidays.persist_into(self.entry)
+                self.holidays.dirty = False
+                self._refresh_entry_ref()
+
         return self._build_schedule_data()
 
     def _build_schedule_data(self) -> dict[str, Any]:
         """Build the schedule data structure for sensors."""
         today = datetime.now()
         tomorrow = today + timedelta(days=1)
+        today_date = today.date()
+        tomorrow_date = tomorrow.date()
 
         today_weekday = WEEKDAYS[today.weekday()] if today.weekday() < 5 else None
         tomorrow_weekday = WEEKDAYS[tomorrow.weekday()] if tomorrow.weekday() < 5 else None
+
+        periods = self.holidays.periods
+        today_h = day_status(today_date, periods)
+        tomorrow_h = day_status(tomorrow_date, periods)
 
         data: dict[str, Any] = {
             "child_name": self.child_name,
@@ -74,6 +106,19 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             "today_weekday": today_weekday,
             "tomorrow_weekday": tomorrow_weekday,
             "last_update": today.isoformat(),
+            # Holiday / school-free data (v2.5.0)
+            "federal_state": self.holidays.federal_state,
+            "today_status": today_h["status"],
+            "today_reason": today_h["reason"],
+            "today_school_free": today_h["status"] != "school_day",
+            "tomorrow_status": tomorrow_h["status"],
+            "tomorrow_reason": tomorrow_h["reason"],
+            "tomorrow_school_free": tomorrow_h["status"] != "school_day",
+            "next_school_day": next_school_day(today_date, periods),
+            "next_vacation": next_event(today_date, periods, event_type="vacation"),
+            "next_public_holiday": next_event(today_date, periods, event_type="holiday"),
+            "holidays_count": len(periods),
+            "holidays_last_updated": self.holidays.last_updated_at,
         }
 
         for day in WEEKDAYS:
