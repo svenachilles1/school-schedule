@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for the School Schedule integration."""
 from __future__ import annotations
 
+import copy
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -44,7 +45,17 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         """Initialize the coordinator."""
         self.entry = entry
         self.child_name: str = entry.data.get(CONF_CHILD_NAME, "")
-        self.lessons: list[dict[str, Any]] = list(entry.data.get(CONF_LESSONS, []))
+        # Deep copy: entry.data is a MappingProxyType over the stored dict —
+        # a shallow list() copy would share the lesson dicts with entry.data,
+        # so in-place mutation (update_lesson) would silently change
+        # entry.data too. async_update_entry() then sees
+        # new_data == entry.data and skips the storage write entirely
+        # (no modified_at bump, nothing persisted) — the lesson edit lives
+        # only in RAM until the next restart wipes it. Deep-copying here
+        # keeps self.lessons fully detached from entry.data (v2.5.2).
+        self.lessons: list[dict[str, Any]] = copy.deepcopy(
+            entry.data.get(CONF_LESSONS, [])
+        )
         # Shared holiday data for this entry's federal state (one instance
         # per state — all children in the same state share the API fetch).
         self.holidays: SharedHolidaysCoordinator = get_holidays_coordinator(
@@ -72,7 +83,8 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         updated = self.hass.config_entries.async_get_entry(self.entry.entry_id)
         if updated is not None:
             self.entry = updated
-            self.lessons = list(updated.data.get(CONF_LESSONS, []))
+            # Deep copy — see __init__: never share dicts with entry.data
+            self.lessons = copy.deepcopy(updated.data.get(CONF_LESSONS, []))
 
         # Refresh holiday data if stale (at most one API request per 24h
         # per federal state — shared between all children in that state).
@@ -164,9 +176,13 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self, weekday: str, lesson_number: int, updates: dict[str, Any]
     ) -> bool:
         """Update an existing lesson."""
-        for lesson in self.lessons:
+        for idx, lesson in enumerate(self.lessons):
             if lesson.get(CONF_WEEKDAY) == weekday and lesson.get(CONF_LESSON_NUMBER) == lesson_number:
-                lesson.update(updates)
+                # Replace the lesson dict instead of mutating it — a fresh
+                # dict guarantees new_data differs from the previously
+                # persisted entry.data even if all field values are equal
+                # (second line of defence behind the deep copy in __init__).
+                self.lessons[idx] = {**lesson, **updates}
                 self._sort_lessons()
                 await self._persist_lessons()
                 self.async_set_updated_data(self._build_schedule_data())
@@ -190,11 +206,24 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
 
     async def _persist_lessons(self) -> None:
         """Persist lessons to the config entry data without triggering a reload."""
-        new_data = {**self.entry.data, CONF_LESSONS: list(self.lessons)}
+        new_data = {**self.entry.data, CONF_LESSONS: copy.deepcopy(self.lessons)}
         # NOTE: reload_on_update was removed in HA 2026.8.x — do NOT pass it.
-        self.hass.config_entries.async_update_entry(
+        changed = self.hass.config_entries.async_update_entry(
             self.entry, data=new_data
         )
-        # Update entry reference but keep self.lessons as-is (we just wrote them)
+        # Update entry reference but keep self.lessons as-is (we just wrote them).
+        if not changed:
+            # async_update_entry returns False when new_data == entry.data —
+            # with the deep copies above this can only mean a real no-op
+            # (identical values). Persist explicitly anyway: equality on the
+            # in-memory dict is NOT proof the .storage file already holds
+            # this state (e.g. after a failed save). Log loudly instead of
+            # silently losing the edit (v2.5.2).
+            _LOGGER.error(
+                "Persist skipped: lesson data identical to entry data for %s "
+                "(%d lessons) — verifying storage is expected to match",
+                self.child_name,
+                len(self.lessons),
+            )
         self._refresh_entry_ref()
         _LOGGER.debug("Persisted %d lessons for %s", len(self.lessons), self.child_name)
