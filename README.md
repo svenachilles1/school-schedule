@@ -33,6 +33,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **School-free binary sensor (v2.5.0):** `binary_sensor.stundenplan_<child>_schulfrei` per child — `on` when there is no school today (vacation, public holiday, or weekend), with attributes for today/tomorrow status, reason, next school day, next vacation and next public holiday
 - **Holiday caching (v2.5.0):** Holiday data is fetched once per 24h per federal state (shared across children), cached in the config entry, and survives restarts and network outages
 - **Federal state service (v2.5.0):** `set_federal_state` switches the state without reloading the integration
+- **Calendar entity per child (v2.5.4):** `calendar.stundenplan_<child>_kalender` — every lesson becomes a real calendar event on its weekday (repeating weekly), school-free days are skipped automatically (vacation, public holidays, weekends). Native calendar cards, automations ("lesson starts in X min"), and calendar-based triggers work out of the box. Read-only: lessons are managed via services/card
 - **Visual card editor:** Height/width configurable via the dashboard editor (no YAML)
 - **Automatic card setup:** The integration registers the Lovelace card resource automatically (browser_mod-style) — no manual `www/` copy, no manual resource registration, automatic cache busting on updates
 

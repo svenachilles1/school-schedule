@@ -7,7 +7,10 @@ from typing import Final
 DOMAIN: Final[str] = "school_schedule"
 
 # Platform types
-PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor"]
+# Platform list — async_forward_entry_setups uses this (see __init__.py).
+# calendar platform added in v2.5.4: one calendar entity per child,
+# events generated on the fly from the lesson list.
+PLATFORMS: Final[list[str]] = ["sensor", "binary_sensor", "calendar"]
 
 # Configuration data fields
 CONF_CHILD_NAME: Final[str] = "child_name"

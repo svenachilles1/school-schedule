@@ -17,6 +17,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Multi-child:** Each child gets their own schedule
 - **Child switcher:** Switch between children directly in the card
 - **Holiday countdown:** Days until the next school holidays in the hero section
+- **Calendar entity (v2.5.4):** Real HA calendar per child — lessons as events, school-free days skipped
 
 ## Installation
 
