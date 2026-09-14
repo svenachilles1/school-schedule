@@ -1,7 +1,7 @@
 """Shared holiday data coordinator for the School Schedule integration.
 
 One instance per federal state — all children in the same state share a
-single API fetch (Michelle + Stella = 1 request, not 2). The fetched
+single API fetch (all children in one state = 1 request). The fetched
 periods are cached in each config entry's data so they survive restarts
 and keep working during network outages. A shared-coordinator pattern in
 ``hass.data[DOMAIN]["holidays"]["<slug>"]`` prevents parallel config

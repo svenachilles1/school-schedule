@@ -19,6 +19,7 @@ CONF_LESSONS: Final[str] = "lessons"
 # Lesson fields
 CONF_WEEKDAY: Final[str] = "weekday"
 CONF_LESSON_NUMBER: Final[str] = "lesson_number"
+CONF_LESSON_UID: Final[str] = "lesson_uid"
 CONF_SUBJECT: Final[str] = "subject"
 CONF_ROOM: Final[str] = "room"
 CONF_TEACHER: Final[str] = "teacher"

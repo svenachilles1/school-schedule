@@ -38,7 +38,7 @@ class SchoolScheduleEntity(CoordinatorEntity):
 
         Without this HA derives the object id from the device name at
         registration time, which produced inconsistent ids like
-        ``binary_sensor.michelle_stundenplan_michelle_schulfrei`` for
+        ``binary_sensor.<child>_stundenplan_<child>_schulfrei`` for
         freshly added entities. With this override every entity is
         registered as ``stundenplan_<child>_<sensor_type>`` from day one.
 
@@ -65,7 +65,7 @@ class SchoolScheduleEntity(CoordinatorEntity):
         (area + device + entity). Our suggested_object_id property then lands
         as the ENTITY part and gets prefixed with the area and device name —
         the v2.5.4 calendar entity was registered as
-        ``calendar.michelle_stundenplan_michelle_stundenplan_michelle_kalender``.
+        ``calendar.<child>_stundenplan_<child>_stundenplan_<child>_kalender``.
 
         Setting ``entity.entity_id`` here makes the platform take the id
         verbatim (``internal_integration_suggested_object_id`` — valid id +

@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_CHILD_NAME,
+    CONF_LESSON_UID,
     CONF_IS_BREAK,
     CONF_LESSON_NUMBER,
     CONF_SUBJECT,
@@ -102,6 +103,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         lesson_list = []
         for lesson in lessons:
             lesson_data = {
+                "lesson_uid": lesson.get(CONF_LESSON_UID) or "",
                 "lesson_number": lesson.get(CONF_LESSON_NUMBER),
                 "subject": lesson.get(CONF_SUBJECT, ""),
                 "room": lesson.get(CONF_ROOM, ""),
@@ -204,6 +206,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                 current_check = current_min
             if start_min <= current_check <= end_min:
                 return {
+                    "lesson_uid": lesson.get(CONF_LESSON_UID) or "",
                     "lesson_number": lesson.get(CONF_LESSON_NUMBER),
                     "subject": lesson.get(CONF_SUBJECT, ""),
                     "room": lesson.get(CONF_ROOM, ""),
@@ -227,6 +230,7 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
             start_min = self._time_to_minutes(start)
             if start_min > current_min:
                 return {
+                    "lesson_uid": lesson.get(CONF_LESSON_UID) or "",
                     "lesson_number": lesson.get(CONF_LESSON_NUMBER),
                     "subject": lesson.get(CONF_SUBJECT, ""),
                     "room": lesson.get(CONF_ROOM, ""),

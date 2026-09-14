@@ -1,10 +1,11 @@
 /**
- * School Schedule Card — Ultra Premium v2.5.6
+ * School Schedule Card — Ultra Premium v2.5.7
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
  *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion,
- *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss
+ *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss,
+ *           eindeutige lesson_uid-Adressierung (Bugfix: falsches Fach im Bearbeiten-Formular)
  */
 
 const HOLIDAY_STATES = [
@@ -305,8 +306,8 @@ class SchoolScheduleCard extends HTMLElement {
       case "select-holiday-state": this._selectHolidayState(actionEl.dataset.state); break;
       case "back-holiday-state": this._backToHolidayPicker(); break;
       case "add-lesson": this._openAddForm(actionEl.dataset.weekday); break;
-      case "edit-lesson": this._openEditForm(actionEl.dataset.weekday, actionEl.dataset.number); break;
-      case "delete-lesson": this._requestDelete(actionEl.dataset.weekday, actionEl.dataset.number); break;
+      case "edit-lesson": this._openEditForm(actionEl.dataset.weekday, actionEl.dataset.number, actionEl.dataset.uid); break;
+      case "delete-lesson": this._requestDelete(actionEl.dataset.weekday, actionEl.dataset.number, actionEl.dataset.uid); break;
       case "confirm-delete": this._confirmDeleteAction(); break;
       case "cancel-delete": this._cancelDelete(); break;
       case "cancel-delete-bg":
@@ -546,10 +547,10 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
-  _openEditForm(weekday, lessonNumber) {
-    const lesson = this._findLesson(weekday, lessonNumber);
+  _openEditForm(weekday, lessonNumber, lessonUid) {
+    const lesson = this._findLesson(weekday, lessonNumber, lessonUid);
     if (!lesson) return;
-    this._formData = { mode: "edit", weekday: weekday, lesson: lesson };
+    this._formData = { mode: "edit", weekday: weekday, lesson: lesson, lesson_uid: lessonUid || "" };
     this._showForm = true;
     this._render();
   }
@@ -619,6 +620,7 @@ class SchoolScheduleCard extends HTMLElement {
     }
 
     if (isEdit) {
+      if (fd.lesson_uid) serviceData.lesson_uid = fd.lesson_uid;
       this._hass.callService("school_schedule", "update_lesson", serviceData);
     } else {
       this._hass.callService("school_schedule", "add_lesson", serviceData);
@@ -631,13 +633,14 @@ class SchoolScheduleCard extends HTMLElement {
 
   // === Delete Logic ===
 
-  _requestDelete(weekday, lessonNumber) {
-    const lesson = this._findLesson(weekday, lessonNumber);
+  _requestDelete(weekday, lessonNumber, lessonUid) {
+    const lesson = this._findLesson(weekday, lessonNumber, lessonUid);
     if (!lesson) return;
     const dayFullNames = this._t("day_full");
     this._confirmDelete = {
       weekday: weekday,
       lesson_number: parseInt(lessonNumber),
+      lesson_uid: lessonUid || "",
       subject: lesson.subject,
       dayName: dayFullNames[weekday] || weekday,
       start_time: (lesson.start_time || "").slice(0, 5),
@@ -653,6 +656,7 @@ class SchoolScheduleCard extends HTMLElement {
       child_name: this._childName,
       weekday: cd.weekday,
       lesson_number: cd.lesson_number,
+      lesson_uid: cd.lesson_uid || undefined,
     });
     this._confirmDelete = null;
     this._render();
@@ -665,19 +669,31 @@ class SchoolScheduleCard extends HTMLElement {
 
   // === Helpers ===
 
-  _findLesson(weekday, lessonNumber) {
+  _findLesson(weekday, lessonNumber, lessonUid) {
+    // v2.5.7: prefer the unique lesson_uid — (weekday, number) alone
+    // is ambiguous when a legacy slot holds two entries (the "wrong
+    // subject in the edit form" bug). Old data without uid falls
+    // back to the first slot match, exactly like before.
+    const candidates = [];
     const dayData = this._days[weekday];
     if (dayData && dayData.lessons) {
       for (const l of dayData.lessons) {
-        if (parseInt(l.lesson_number) === parseInt(lessonNumber)) return l;
+        if (parseInt(l.lesson_number) === parseInt(lessonNumber)) candidates.push(l);
       }
     }
     if (this._today && this._todayKey === weekday && this._today.lessons) {
       for (const l of this._today.lessons) {
-        if (parseInt(l.lesson_number) === parseInt(lessonNumber)) return l;
+        if (parseInt(l.lesson_number) === parseInt(lessonNumber)) {
+          if (!candidates.some(c => c === l)) candidates.push(l);
+        }
       }
     }
-    return null;
+    if (candidates.length === 0) return null;
+    if (lessonUid) {
+      const byUid = candidates.find(l => String(l.lesson_uid || "") === String(lessonUid));
+      if (byUid) return byUid;
+    }
+    return candidates[0];
   }
 
   _getNextLessonNumber(weekday) {
@@ -985,11 +1001,12 @@ class SchoolScheduleCard extends HTMLElement {
 
     let editBtns = "";
     if (this._editMode) {
+      const lessonUid = lesson.lesson_uid || "";
       editBtns = '<div class="lc-edit">' +
-        '<button class="lc-edit-btn" data-action="edit-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" title="' + this._t("edit") + '">' +
+        '<button class="lc-edit-btn" data-action="edit-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" data-uid="' + lessonUid + '" title="' + this._t("edit") + '">' +
           '<ha-icon icon="mdi:pencil"></ha-icon>' +
         '</button>' +
-        '<button class="lc-edit-btn" data-action="delete-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" title="' + this._t("delete") + '">' +
+        '<button class="lc-edit-btn" data-action="delete-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" data-uid="' + lessonUid + '" title="' + this._t("delete") + '">' +
           '<ha-icon icon="mdi:trash-can"></ha-icon>' +
         '</button>' +
       '</div>';
@@ -1220,7 +1237,7 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { type: "custom:school-schedule-card", child_name: "Michelle", height: "", width: "", language: "" };
+    return { type: "custom:school-schedule-card", child_name: "", height: "", width: "", language: "" };
   }
 
   // === Styles ===
@@ -2014,7 +2031,7 @@ class SchoolScheduleCardEditor extends HTMLElement {
       <div class="ssc-editor">
         <div>
           <div class="ssc-editor-label" data-i18n="ed_child">Name des Kindes</div>
-          <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._config.child_name || ""}" placeholder="z.B. Michelle" />
+          <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._config.child_name || ""}" placeholder="z.B. Max" />
           <div class="ssc-editor-hint" data-i18n="ed_child_hint">Muss mit dem Namen in der Integration übereinstimmen</div>
         </div>
         <div>
@@ -2115,6 +2132,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.5.6",
+  description: "Stundenplan-Karte Ultra Premium v2.5.7",
   preview: false,
 });

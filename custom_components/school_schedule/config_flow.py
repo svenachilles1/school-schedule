@@ -22,6 +22,7 @@ from .const import (
     CONF_APPLY_TO_ALL_DAYS,
     CONF_LESSON_NUMBER,
     CONF_LESSONS,
+    CONF_WEEKDAY,
     CONF_ROOM,
     CONF_START_TIME,
     CONF_SUBJECT,
@@ -280,30 +281,55 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
 
             if not is_break and not user_input.get(CONF_SUBJECT):
                 errors[CONF_SUBJECT] = "subject_required"
-            else:
-                user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
-                user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
 
-                if is_break:
-                    if not user_input.get(CONF_SUBJECT):
-                        user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
-                    if not user_input.get(CONF_COLOR):
-                        user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
-                    if not user_input.get(CONF_ICON):
-                        user_input[CONF_ICON] = DEFAULT_BREAK_ICON
-                    user_input[CONF_ROOM] = ""
-                    user_input[CONF_TEACHER] = ""
-
+            # v2.5.7: refuse duplicate (weekday, lesson_number) slots —
+            # ambiguous slots made card edits target the wrong lesson.
+            if not errors:
+                number = user_input.get(CONF_LESSON_NUMBER)
                 if apply_to_all:
-                    base_lesson = {k: v for k, v in user_input.items() if k != CONF_WEEKDAY}
-                    for day in WEEKDAYS:
-                        lesson = {**base_lesson, CONF_WEEKDAY: day}
-                        self._lessons.append(lesson)
-                else:
-                    self._lessons.append(user_input)
+                    if any(
+                        l.get(CONF_LESSON_NUMBER) == number
+                        and l.get(CONF_WEEKDAY) in WEEKDAYS
+                        for l in self._lessons
+                    ):
+                        errors[CONF_LESSON_NUMBER] = "slot_taken"
+                elif any(
+                    l.get(CONF_WEEKDAY) == user_input.get(CONF_WEEKDAY)
+                    and l.get(CONF_LESSON_NUMBER) == number
+                    for l in self._lessons
+                ):
+                    errors[CONF_LESSON_NUMBER] = "slot_taken"
 
-                self._sort_lessons()
-                return await self._save_lessons()
+            if errors:
+                return self.async_show_form(
+                    step_id="add_lesson",
+                    data_schema=_lesson_schema(user_input),
+                    errors=errors,
+                )
+
+            user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
+            user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
+
+            if is_break:
+                if not user_input.get(CONF_SUBJECT):
+                    user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
+                if not user_input.get(CONF_COLOR):
+                    user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
+                if not user_input.get(CONF_ICON):
+                    user_input[CONF_ICON] = DEFAULT_BREAK_ICON
+                user_input[CONF_ROOM] = ""
+                user_input[CONF_TEACHER] = ""
+
+            if apply_to_all:
+                base_lesson = {k: v for k, v in user_input.items() if k != CONF_WEEKDAY}
+                for day in WEEKDAYS:
+                    lesson = {**base_lesson, CONF_WEEKDAY: day}
+                    self._lessons.append(lesson)
+            else:
+                self._lessons.append(user_input)
+
+            self._sort_lessons()
+            return await self._save_lessons()
 
         return self.async_show_form(
             step_id="add_lesson",
@@ -396,6 +422,10 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def _save_lessons(self) -> FlowResult:
         """Save lessons to the config entry and update coordinator."""
+        # v2.5.7: stamp deterministic lesson uids so every persisted
+        # lesson is uniquely addressable by the card.
+        from .lesson_logic import ensure_lesson_uids
+        ensure_lesson_uids(self._lessons)
         new_data = {**self.config_entry.data, CONF_LESSONS: copy.deepcopy(self._lessons)}
         # NOTE: reload_on_update was removed in HA 2026.8.x — do NOT pass it.
         self.hass.config_entries.async_update_entry(

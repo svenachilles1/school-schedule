@@ -6,7 +6,7 @@ add_lesson:
       name: Name des Kindes
       description: Name des Kindes, dessen Stundenplan geändert wird.
       required: true
-      example: Michelle
+      example: Max
       selector:
         text:
     weekday:
@@ -109,7 +109,7 @@ remove_lesson:
       name: Name des Kindes
       description: Name des Kindes.
       required: true
-      example: Michelle
+      example: Max
       selector:
         text:
     weekday:
@@ -141,6 +141,13 @@ remove_lesson:
           max: 12
           mode: box
 
+    lesson_uid:
+      name: Stunden-ID
+      description: Optionale eindeutige ID der Stunde (lesson_uid aus den Sensor-Attributen). Sorgt bei mehrfach vergebenen Stundennummern für eindeutige Zuordnung (v2.5.7).
+      required: false
+      example: monday-4
+      selector:
+        text:
 update_lesson:
   name: Stunde aktualisieren
   description: Aktualisiert eine bestehende Stunde im Stundenplan.
@@ -149,7 +156,7 @@ update_lesson:
       name: Name des Kindes
       description: Name des Kindes.
       required: true
-      example: Michelle
+      example: Max
       selector:
         text:
     weekday:
@@ -180,6 +187,13 @@ update_lesson:
           min: 1
           max: 12
           mode: box
+    lesson_uid:
+      name: Stunden-ID
+      description: Optionale eindeutige ID der Stunde (lesson_uid aus den Sensor-Attributen). Sorgt bei mehrfach vergebenen Stundennummern für eindeutige Zuordnung (v2.5.7).
+      required: false
+      example: monday-4
+      selector:
+        text:
     subject:
       name: Fach
       description: Neues Fach.
@@ -244,7 +258,7 @@ get_schedule:
       name: Name des Kindes
       description: Name des Kindes.
       required: true
-      example: Michelle
+      example: Max
       selector:
         text:
     weekday:
@@ -274,7 +288,7 @@ set_federal_state:
       name: Name des Kindes
       description: Name des Kindes.
       required: true
-      example: Michelle
+      example: Max
       selector:
         text:
     federal_state:
