@@ -1,9 +1,10 @@
 /**
- * School Schedule Card — Ultra Premium v2.5.5
+ * School Schedule Card — Ultra Premium v2.5.6
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
- *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion
+ *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion,
+ *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss
  */
 
 const HOLIDAY_STATES = [
@@ -50,6 +51,10 @@ class SchoolScheduleCard extends HTMLElement {
     this._shadow = this.attachShadow({ mode: "open" });
     this._shadow.addEventListener("click", (e) => this._handleClick(e));
     this._shadow.addEventListener("input", (e) => this._handleInput(e));
+    this._progress = null;
+    this._confettiFired = false;
+    this._progressDay = "";
+    this._starsPrev = 0;
   }
 
   static get STRINGS() {
@@ -75,6 +80,8 @@ class SchoolScheduleCard extends HTMLElement {
         to: "bis",
         days_until_holiday: "TAGE BIS FERIEN",
         holiday_days_left: "FERIENTAGE NOCH",
+        progress_label: "TAGESFORTSCHRITT",
+        day_done: "TAG GESCHAFFT!",
         edit_lesson: "Stunde bearbeiten",
         add_lesson: "Stunde hinzuf\u00fcgen",
         weekday: "Wochentag",
@@ -123,6 +130,8 @@ class SchoolScheduleCard extends HTMLElement {
         to: "to",
         days_until_holiday: "DAYS UNTIL HOLIDAYS",
         holiday_days_left: "HOLIDAYS LEFT",
+        progress_label: "DAILY PROGRESS",
+        day_done: "DAY DONE!",
         edit_lesson: "Edit lesson",
         add_lesson: "Add lesson",
         weekday: "Weekday",
@@ -707,6 +716,95 @@ class SchoolScheduleCard extends HTMLElement {
     '</div>';
   }
 
+
+  _calcProgress() {
+    const lessons = (this._today && Array.isArray(this._today.lessons)) ? this._today.lessons : [];
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    const toMins = (t) => {
+      if (!t) return null;
+      const p = String(t).split(":").map(Number);
+      if (p.length < 2 || isNaN(p[0]) || isNaN(p[1])) return null;
+      return p[0] * 60 + p[1] + (p.length > 2 && !isNaN(p[2]) ? p[2] / 60 : 0);
+    };
+    const real = lessons.filter((l) => l.is_break !== true);
+    const total = real.length;
+    let done = 0;
+    for (const l of real) {
+      const e = toMins(l.end_time);
+      if (e !== null && e <= nowMins) done++;
+    }
+    const current = this._today ? this._today.current : null;
+    let frac = 0;
+    if (current && current.is_break !== true) {
+      const s = toMins(current.start_time), e = toMins(current.end_time);
+      // frac nur wenn die laufende Stunde wirklich noch nicht beendet ist (e > now) --
+      // sonst waere sie in done schon gezaehlt (keine Doppel-Zaehlung bei Stale-Daten)
+      if (s !== null && e !== null && e > s && e > nowMins) {
+        frac = Math.min(1, Math.max(0, (nowMins - s) / (e - s)));
+      }
+    }
+    const pct = total > 0 ? Math.min(1, (done + frac) / total) : 0;
+    const isDone = total > 0 && done >= total;
+    const dayKey = now.toDateString();
+    if (dayKey !== this._progressDay) {
+      this._progressDay = dayKey;
+      this._confettiFired = false;
+      this._starsPrev = 0;
+    }
+    return { total, done, frac, pct, isDone };
+  }
+
+  _renderProgressSection() {
+    const p = this._calcProgress();
+    this._progress = p;
+    const grad = p.isDone
+      ? "linear-gradient(90deg,#ffb74d,#ffd740)"
+      : "linear-gradient(90deg,var(--primary-color,#7c4dff),color-mix(in srgb,var(--primary-color,#7c4dff) 45%,transparent))";
+    const label = p.isDone ? this._t("day_done") : this._t("progress_label");
+    let starsHtml = "";
+    for (let i = 0; i < p.total; i++) {
+      const earned = i < p.done;
+      const isNew = earned && i >= this._starsPrev;
+      starsHtml += '<span class="hp-star' + (earned ? " earned" : "") + (isNew ? " pop" : "") + '">\u2605</span>';
+    }
+    if (p.total === 0) starsHtml = '<span class="hp-star">\u2605</span>';
+    const pct = Math.round(p.pct * 100);
+    const doneGlow = p.isDone ? "box-shadow:0 0 18px rgba(255,193,7,0.35);" : "";
+    return '<div class="hero-progress"' + (p.isDone ? ' data-done="1"' : "") + '>' +
+      '<div class="hp-row">' +
+        '<div class="hp-label">' + label + '</div>' +
+        '<div class="hp-count">' + p.done + '/' + p.total + '</div>' +
+      '</div>' +
+      '<div class="hp-bar">' +
+        '<div class="hp-fill" style="width:' + pct + '%;background:' + grad + ';' + doneGlow + '"></div>' +
+      '</div>' +
+      '<div class="hp-stars">' + starsHtml + '</div>' +
+    '</div>';
+  }
+
+  _fireConfetti() {
+    const host = this._shadow.querySelector(".ssc");
+    if (!host) return;
+    const colors = ["#ffd740", "#00e5ff", "#ff4081", "#7c4dff", "#69f0ae"];
+    const parts = [];
+    for (let i = 0; i < 28; i++) {
+      const c = colors[i % colors.length];
+      const left = 4 + (i * 93) % 92;
+      const dur = 1.8 + ((i * 37) % 90) / 100;
+      const delay = ((i * 53) % 60) / 100;
+      const size = 5 + ((i * 29) % 5);
+      const variant = i % 3 === 1 ? " confetti-fall2" : (i % 3 === 2 ? " confetti-fall3" : "");
+      const round = i % 4 === 0 ? "50%" : "2px";
+      parts.push('<i class="confetti' + variant + '" style="left:' + left + '%;background:' + c + ';width:' + size + 'px;height:' + (i % 3 === 0 ? size * 0.5 : size) + 'px;border-radius:' + round + ';animation-duration:' + dur + 's;animation-delay:' + delay + 's"></i>');
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "confetti-layer";
+    wrap.innerHTML = parts.join("");
+    host.appendChild(wrap);
+    setTimeout(() => { wrap.remove(); }, 4200);
+  }
+
   _render() {
     if (!this._days || Object.keys(this._days).length === 0) {
       const switchHtml = this._renderChildSwitch();
@@ -779,6 +877,8 @@ class SchoolScheduleCard extends HTMLElement {
       heroHtml = '<div class="hero">' + heroPills + '</div>';
     }
 
+    const progressHtml = this._today ? this._renderProgressSection() : "";
+
     // --- Action buttons ---
     const viewBtnText = this._viewMode === "week" ? this._t("day_view") : this._t("week_view");
     const viewBtnIcon = this._viewMode === "week" ? "mdi:calendar-day" : "mdi:calendar-week";
@@ -835,11 +935,20 @@ class SchoolScheduleCard extends HTMLElement {
           '</div>' +
           childSwitchHtml +
           heroHtml +
+          progressHtml +
           '<div class="content-scroll">' + contentHtml + '</div>' +
         '</div>' +
         formHtml +
         confirmHtml +
       '</ha-card>';
+
+    if (this._today && this._progress) {
+      if (this._progress.isDone && !this._confettiFired) {
+        this._confettiFired = true;
+        this._fireConfetti();
+      }
+      this._starsPrev = this._progress.done;
+    }
   }
 
   _renderLessonCard(lesson, isCurrent, isToday, day) {
@@ -1343,6 +1452,97 @@ class SchoolScheduleCard extends HTMLElement {
         font-size: 0.65em; font-weight: 600; margin-top: 3px;
         color: var(--secondary-text-color, rgba(255,255,255,0.4));
         text-transform: uppercase; letter-spacing: 0.08em;
+      }
+
+      /* === Daily progress + gamification (v2.5.6) === */
+      .ssc { position: relative; }
+      .hero-progress {
+        display: flex; flex-direction: column; gap: 7px;
+        padding: 12px 16px; margin-bottom: 16px;
+        border-radius: 16px; width: 100%; box-sizing: border-box;
+        background: color-mix(in srgb, var(--card-background-color, #111118) 60%, transparent);
+        backdrop-filter: blur(12px);
+        border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 10%, transparent);
+      }
+      .hero-progress[data-done] {
+        border-color: color-mix(in srgb, #ffca28 35%, transparent);
+        box-shadow: 0 0 24px rgba(255,193,7,0.12);
+      }
+      .hp-row { display: flex; justify-content: space-between; align-items: baseline; }
+      .hp-label {
+        font-size: 0.6em; font-weight: 800; letter-spacing: 0.1em;
+        color: var(--secondary-text-color, rgba(255,255,255,0.4));
+        text-transform: uppercase;
+      }
+      .hero-progress[data-done] .hp-label {
+        background: linear-gradient(135deg,#ffb74d,#ffd740);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent; color: transparent;
+      }
+      .hp-count {
+        font-size: 0.78em; font-weight: 900;
+        color: var(--primary-text-color, #fff);
+      }
+      .hp-bar {
+        position: relative; height: 10px; border-radius: 6px; overflow: hidden;
+        background: color-mix(in srgb, var(--primary-text-color, #fff) 8%, transparent);
+      }
+      .hp-fill {
+        position: absolute; top: 0; bottom: 0; left: 0; height: 100%;
+        border-radius: 6px; overflow: hidden;
+        transition: width 0.8s cubic-bezier(0.22,1,0.36,1);
+      }
+      .hp-fill::after {
+        content: ""; position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+        background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
+        transform: translateX(-100%);
+        animation: hp-shimmer 2.6s ease-in-out infinite;
+      }
+      .hero-progress[data-done] .hp-fill::after { animation: none; opacity: 0; }
+      @keyframes hp-shimmer {
+        0% { transform: translateX(-100%); }
+        55%, 100% { transform: translateX(100%); }
+      }
+      .hp-stars { display: flex; flex-wrap: wrap; gap: 5px; min-height: 18px; }
+      .hp-star {
+        font-size: 14px; line-height: 1; font-style: normal;
+        color: color-mix(in srgb, var(--primary-text-color, #fff) 14%, transparent);
+        transition: color 0.4s;
+      }
+      .hp-star.earned {
+        color: #ffd740;
+        text-shadow: 0 0 10px rgba(255,215,64,0.55);
+      }
+      .hp-star.pop { animation: star-pop 0.6s cubic-bezier(0.34,1.56,0.64,1); }
+      @keyframes star-pop {
+        0% { transform: scale(0); opacity: 0; }
+        60% { transform: scale(1.35); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .confetti-layer {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        overflow: hidden; pointer-events: none; z-index: 5;
+      }
+      .confetti {
+        position: absolute; top: -12px; display: block; opacity: 0;
+        animation-name: confetti-fall1; animation-fill-mode: forwards;
+      }
+      .confetti-fall2 { animation-name: confetti-fall2; }
+      .confetti-fall3 { animation-name: confetti-fall3; }
+      @keyframes confetti-fall1 {
+        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+        85% { opacity: 1; }
+        100% { transform: translateY(340px) rotate(680deg); opacity: 0; }
+      }
+      @keyframes confetti-fall2 {
+        0% { transform: translateY(0) rotate(0deg) translateX(0); opacity: 1; }
+        40% { transform: translateY(140px) rotate(240deg) translateX(26px); opacity: 1; }
+        100% { transform: translateY(340px) rotate(520deg) translateX(-14px); opacity: 0; }
+      }
+      @keyframes confetti-fall3 {
+        0% { transform: translateY(0) rotate(0deg) translateX(0); opacity: 1; }
+        50% { transform: translateY(170px) rotate(-260deg) translateX(-30px); opacity: 1; }
+        100% { transform: translateY(340px) rotate(-540deg) translateX(18px); opacity: 0; }
       }
 
       .hero-now {
@@ -1915,6 +2115,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.5.5",
+  description: "Stundenplan-Karte Ultra Premium v2.5.6",
   preview: false,
 });
