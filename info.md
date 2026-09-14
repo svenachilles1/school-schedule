@@ -10,6 +10,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Day view toggle:** Switch between week and day view directly in the card
 - **Inline management:** Add, edit, and delete lessons directly from the card
 - **Hero section:** Shows currently running lesson (JETZT) and next lesson (ALS NÄCHSTES)
+- **Daily progress bar (v2.5.6):** "TAGESFORTSCHRITT" section under the hero pills — counts finished lessons plus a proportional share of the currently running lesson (breaks excluded), gradient bar with animated shimmer, switches to a golden "TAG GESCHAFFT!" state with glow when the last lesson ends
+- **Star gamification + confetti (v2.5.6):** One star per real lesson — grey while pending, golden with glow when earned (pop animation on new stars); a colorful confetti burst fires exactly once when school is over
 - **Break/Pause support:** Mark lessons as breaks with their own visual style
 - **Holiday calendar:** German school holidays per federal state (mehr-schulferien.de)
 - **Responsive auto-fill columns** and a visual editor for card height/width
