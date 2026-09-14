@@ -21,6 +21,7 @@ from .const import (
     CONF_IS_BREAK,
     CONF_APPLY_TO_ALL_DAYS,
     CONF_LESSON_NUMBER,
+    CONF_LESSON_UID,
     CONF_LESSONS,
     CONF_WEEKDAY,
     CONF_ROOM,
@@ -389,21 +390,57 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
             is_break = user_input.get(CONF_IS_BREAK, False)
             if not is_break and not user_input.get(CONF_SUBJECT):
                 errors[CONF_SUBJECT] = "subject_required"
+
+            # v2.5.8: block moving the lesson onto another lesson's slot —
+            # the card addresses lessons by (weekday, number) + uid, an
+            # occupied slot would recreate the duplicate-slot bug.
+            if not errors:
+                new_day = user_input.get(CONF_WEEKDAY)
+                new_num = user_input.get(CONF_LESSON_NUMBER)
+                if (
+                    new_day != lesson.get(CONF_WEEKDAY)
+                    or new_num != lesson.get(CONF_LESSON_NUMBER)
+                ) and any(
+                    l.get(CONF_WEEKDAY) == new_day
+                    and l.get(CONF_LESSON_NUMBER) == new_num
+                    for i, l in enumerate(self._lessons)
+                    if i != self._selected_lesson_index
+                ):
+                    errors[CONF_LESSON_NUMBER] = "slot_taken"
+
+            if errors:
+                return self.async_show_form(
+                    step_id="edit_lesson",
+                    data_schema=_lesson_schema(user_input),
+                    errors=errors,
+                )
+
+            if is_break:
+                if not user_input.get(CONF_SUBJECT):
+                    user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
+                if not user_input.get(CONF_COLOR):
+                    user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
+                if not user_input.get(CONF_ICON):
+                    user_input[CONF_ICON] = DEFAULT_BREAK_ICON
+                user_input[CONF_ROOM] = ""
+                user_input[CONF_TEACHER] = ""
+            user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
+            user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
+            # v2.5.8: preserve the lesson uid when the slot is unchanged
+            # (an options-flow edit replaces the whole dict — without this
+            # the uid was silently dropped and the backfill could collide);
+            # drop it when the lesson moved so _save_lessons re-stamps it.
+            if (
+                user_input.get(CONF_WEEKDAY) == lesson.get(CONF_WEEKDAY)
+                and user_input.get(CONF_LESSON_NUMBER) == lesson.get(CONF_LESSON_NUMBER)
+            ):
+                if lesson.get(CONF_LESSON_UID):
+                    user_input[CONF_LESSON_UID] = lesson[CONF_LESSON_UID]
             else:
-                if is_break:
-                    if not user_input.get(CONF_SUBJECT):
-                        user_input[CONF_SUBJECT] = DEFAULT_BREAK_SUBJECT
-                    if not user_input.get(CONF_COLOR):
-                        user_input[CONF_COLOR] = DEFAULT_BREAK_COLOR
-                    if not user_input.get(CONF_ICON):
-                        user_input[CONF_ICON] = DEFAULT_BREAK_ICON
-                    user_input[CONF_ROOM] = ""
-                    user_input[CONF_TEACHER] = ""
-                user_input[CONF_START_TIME] = _strip_seconds(user_input[CONF_START_TIME])
-                user_input[CONF_END_TIME] = _strip_seconds(user_input[CONF_END_TIME])
-                self._lessons[self._selected_lesson_index] = user_input
-                self._sort_lessons()
-                return await self._save_lessons()
+                user_input.pop(CONF_LESSON_UID, None)
+            self._lessons[self._selected_lesson_index] = user_input
+            self._sort_lessons()
+            return await self._save_lessons()
 
         return self.async_show_form(
             step_id="edit_lesson",

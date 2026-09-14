@@ -99,5 +99,35 @@ print("blocked_days: reports days blocking a number                      [OK]")
 assert slot_taken(dup, "tuesday", 4) is True, "adding a third #4 must be refused"
 print("Bug scenario: duplicate add would be rejected (ValueError)        [OK]")
 
+# ─── v2.5.8 regression: uid stripped by an options-flow edit ──────────
+
+# The exact collision that shipped in v2.5.7: an options-flow edit replaced
+# the whole lesson dict (uid dropped) — the backfill then re-issued the BASE
+# uid although another lesson already held it.
+edited = [
+    {"weekday": "monday", "lesson_number": 1, "subject": "A", "lesson_uid": "monday-1"},
+    {"weekday": "monday", "lesson_number": 1, "subject": "B-neu"},  # uid lost in edit
+]
+ensure_lesson_uids(edited)
+assert edited[1]["lesson_uid"] == "monday-1-dup2", edited[1]["lesson_uid"]
+assert len({l["lesson_uid"] for l in edited}) == 2
+print("regression: re-stamp after uid-loss restores the SAME unique uid   [OK]")
+
+# Collision-free even against exotic pre-existing uids
+weird = [
+    {"weekday": "monday", "lesson_number": 1, "subject": "A", "lesson_uid": "monday-1"},
+    {"weekday": "monday", "lesson_number": 1, "subject": "B", "lesson_uid": "monday-1-dup2"},
+    {"weekday": "monday", "lesson_number": 1, "subject": "C"},  # third, uid-less
+]
+ensure_lesson_uids(weird)
+assert weird[2]["lesson_uid"] == "monday-1-dup3", weird[2]["lesson_uid"]
+print("regression: -dupN probing skips ANY taken uid (dup3 after dup2)    [OK]")
+
+# uid set survives a second pass untouched (idempotent incl. seeded set)
+snapshot = [dict(l) for l in weird]
+ensure_lesson_uids(weird)
+assert weird == snapshot
+print("regression: seeded backfill stays idempotent                        [OK]")
+
 print()
 print("ALL LESSON-LOGIC TESTS PASSED ✅")

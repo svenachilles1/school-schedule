@@ -30,8 +30,18 @@ def ensure_lesson_uids(lessons: list[dict[str, Any]]) -> None:
     duplicates the 2nd+ occurrence gets a ``-dup<n>`` suffix, keeping every
     entry individually addressable. Deterministic on the stored list order,
     so uids are stable across restarts as long as the list does not change.
+
+    v2.5.8: the taken-set is seeded with EVERY uid already present in the
+    list first — a uid-less entry (e.g. after an options-flow edit replaced
+    the whole dict and dropped the uid) can then never collide with a
+    pre-existing uid, and re-stamping even restores the very same ``-dupN``
+    uid the entry had before the edit.
     """
-    seen: dict[str, int] = {}
+    taken: set[str] = set()
+    for lesson in lessons:
+        uid = lesson.get(CONF_LESSON_UID)
+        if uid:
+            taken.add(uid)
     for lesson in lessons:
         if lesson.get(CONF_LESSON_UID):
             continue
@@ -40,9 +50,15 @@ def ensure_lesson_uids(lessons: list[dict[str, Any]]) -> None:
         if weekday is None or number is None:
             continue
         base = lesson_uid_for(weekday, number)
-        count = seen.get(base, 0)
-        seen[base] = count + 1
-        lesson[CONF_LESSON_UID] = base if count == 0 else f"{base}-dup{count + 1}"
+        if base not in taken:
+            lesson[CONF_LESSON_UID] = base
+            taken.add(base)
+        else:
+            n = 2
+            while f"{base}-dup{n}" in taken:
+                n += 1
+            lesson[CONF_LESSON_UID] = f"{base}-dup{n}"
+            taken.add(f"{base}-dup{n}")
 
 
 def slot_taken(lessons: list[dict[str, Any]], weekday: str, number: Any) -> bool:
