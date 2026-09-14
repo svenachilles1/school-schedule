@@ -25,6 +25,7 @@ from .const import (
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
 from .holidays import federal_state_from_entry, release_holidays_coordinator
+from .lesson_logic import slot_taken
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +48,14 @@ REMOVE_LESSON_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("weekday"): vol.In(WEEKDAYS),
     vol.Required("lesson_number"): vol.Coerce(int),
+    vol.Optional("lesson_uid", default=None): vol.Any(None, cv.string),
 })
 
 UPDATE_LESSON_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("weekday"): vol.In(WEEKDAYS),
     vol.Required("lesson_number"): vol.Coerce(int),
+    vol.Optional("lesson_uid", default=None): vol.Any(None, cv.string),
     vol.Optional("subject"): cv.string,
     vol.Optional("room"): cv.string,
     vol.Optional("teacher"): cv.string,
@@ -139,13 +142,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             }
 
             if apply_to_all:
+                blocked = [
+                    day
+                    for day in WEEKDAYS
+                    if slot_taken(coordinator.lessons, day, call.data["lesson_number"])
+                ]
+                if blocked:
+                    raise HomeAssistantError(
+                        f"Lesson number {call.data['lesson_number']} is already taken on: {', '.join(blocked)}"
+                    )
                 for day in WEEKDAYS:
                     lesson = {**base_lesson, "weekday": day}
                     success = await coordinator.add_lesson(lesson)
                     _LOGGER.info("add_lesson (all days, %s) result: %s", day, success)
             else:
+                if slot_taken(coordinator.lessons, call.data["weekday"], call.data["lesson_number"]):
+                    raise HomeAssistantError(
+                        f"Lesson {call.data['weekday']} #{call.data['lesson_number']} already exists — edit it instead"
+                    )
                 lesson = {**base_lesson, "weekday": call.data["weekday"]}
-                success = await coordinator.add_lesson(lesson)
+                try:
+                    success = await coordinator.add_lesson(lesson)
+                except ValueError as err:
+                    raise HomeAssistantError(str(err)) from err
                 _LOGGER.info("add_lesson result: %s", success)
                 if not success:
                     raise HomeAssistantError("Failed to add lesson")
@@ -154,7 +173,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             """Handle remove_lesson service call."""
             child_name = call.data["child_name"]
             coordinator = _find_coordinator(hass, child_name)
-            success = await coordinator.remove_lesson(call.data["weekday"], call.data["lesson_number"])
+            success = await coordinator.remove_lesson(
+                call.data["weekday"],
+                call.data["lesson_number"],
+                lesson_uid=call.data.get("lesson_uid"),
+            )
             if not success:
                 raise HomeAssistantError(f"Lesson not found")
 
@@ -166,7 +189,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for field in ["subject", "room", "teacher", "start_time", "end_time", "color", "icon", "is_break"]:
                 if field in call.data:
                     updates[field] = call.data[field]
-            success = await coordinator.update_lesson(call.data["weekday"], call.data["lesson_number"], updates)
+            success = await coordinator.update_lesson(
+                call.data["weekday"],
+                call.data["lesson_number"],
+                updates,
+                lesson_uid=call.data.get("lesson_uid"),
+            )
             if not success:
                 raise HomeAssistantError(f"Lesson not found")
 

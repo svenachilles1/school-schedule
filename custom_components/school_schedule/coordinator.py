@@ -16,6 +16,7 @@ from .const import (
     CONF_LESSONS,
     CONF_WEEKDAY,
     CONF_LESSON_NUMBER,
+    CONF_LESSON_UID,
     DOMAIN,
     UPDATE_INTERVAL_MINUTES,
     WEEKDAYS,
@@ -25,6 +26,7 @@ from .holiday_logic import (
     next_event,
     next_school_day,
 )
+from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
 from .holidays import (
     SharedHolidaysCoordinator,
     federal_state_from_entry,
@@ -56,6 +58,9 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self.lessons: list[dict[str, Any]] = copy.deepcopy(
             entry.data.get(CONF_LESSONS, [])
         )
+        # v2.5.7: backfill deterministic lesson uids for legacy
+        # entries so the card can address every lesson uniquely.
+        ensure_lesson_uids(self.lessons)
         # Shared holiday data for this entry's federal state (one instance
         # per state — all children in the same state share the API fetch).
         self.holidays: SharedHolidaysCoordinator = get_holidays_coordinator(
@@ -85,6 +90,7 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             self.entry = updated
             # Deep copy — see __init__: never share dicts with entry.data
             self.lessons = copy.deepcopy(updated.data.get(CONF_LESSONS, []))
+            ensure_lesson_uids(self.lessons)
 
         # Refresh holiday data if stale (at most one API request per 24h
         # per federal state — shared between all children in that state).
@@ -151,7 +157,26 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         return sorted(day_lessons, key=lambda l: l.get(CONF_LESSON_NUMBER, 0))
 
     async def add_lesson(self, lesson: dict[str, Any]) -> bool:
-        """Add a new lesson to the schedule."""
+        """Add a new lesson to the schedule.
+
+        v2.5.7: refuses a duplicate (weekday, lesson_number) slot —
+        the card addresses lessons by that pair, so a second entry
+        made edits and deletes ambiguous (the edit form showed the
+        wrong subject). Every new lesson gets a deterministic
+        lesson_uid.
+        """
+        weekday = lesson.get(CONF_WEEKDAY)
+        number = lesson.get(CONF_LESSON_NUMBER)
+        if slot_taken(self.lessons, weekday, number):
+            _LOGGER.warning(
+                "add_lesson refused: slot %s #%s already taken",
+                weekday,
+                number,
+            )
+            raise ValueError(
+                f"Lesson {weekday} #{number} already exists — edit it instead"
+            )
+        lesson = {**lesson, CONF_LESSON_UID: lesson_uid_for(weekday, number)}
         self.lessons.append(lesson)
         self._sort_lessons()
         await self._persist_lessons()
@@ -159,49 +184,90 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         _LOGGER.info("add_lesson: %s, total now %d", lesson.get("subject"), len(self.lessons))
         return True
 
-    async def remove_lesson(self, weekday: str, lesson_number: int) -> bool:
-        """Remove a lesson by weekday and lesson number."""
-        before = len(self.lessons)
-        self.lessons = [
-            l for l in self.lessons
-            if not (l.get(CONF_WEEKDAY) == weekday and l.get(CONF_LESSON_NUMBER) == lesson_number)
-        ]
-        if len(self.lessons) < before:
-            await self._persist_lessons()
-            self.async_set_updated_data(self._build_schedule_data())
-            return True
-        return False
-
-    async def update_lesson(
-        self, weekday: str, lesson_number: int, updates: dict[str, Any]
+    async def remove_lesson(
+        self, weekday: str, lesson_number: int, lesson_uid: str | None = None
     ) -> bool:
-        """Update an existing lesson."""
+        """Remove a lesson by weekday and lesson number.
+
+        v2.5.7: removes exactly ONE entry — by lesson_uid when
+        provided (unique even in a slot with legacy duplicates),
+        otherwise the first slot match. The old behaviour filtered
+        ALL matches, silently deleting both duplicates in an
+        ambiguous slot.
+        """
+        if lesson_uid:
+            for idx, lesson in enumerate(self.lessons):
+                if (
+                    lesson.get(CONF_LESSON_UID) == lesson_uid
+                    and lesson.get(CONF_WEEKDAY) == weekday
+                ):
+                    del self.lessons[idx]
+                    await self._persist_lessons()
+                    self.async_set_updated_data(self._build_schedule_data())
+                    return True
         for idx, lesson in enumerate(self.lessons):
             if lesson.get(CONF_WEEKDAY) == weekday and lesson.get(CONF_LESSON_NUMBER) == lesson_number:
-                # Replace the lesson dict instead of mutating it — a fresh
-                # dict guarantees new_data differs from the previously
-                # persisted entry.data even if all field values are equal
-                # (second line of defence behind the deep copy in __init__).
-                new_lesson = {**lesson, **updates}
-                if new_lesson == lesson:
-                    # No-op save: every submitted value matches the stored
-                    # lesson. Nothing changed, nothing to persist — HA's
-                    # async_update_entry would skip the write anyway
-                    # (new_data == entry.data). Detect it here so the
-                    # anomaly guard in _persist_lessons stays reserved for
-                    # real regressions (v2.5.3).
-                    _LOGGER.debug(
-                        "update_lesson: no changes for %s lesson %s — nothing to persist",
-                        weekday,
-                        lesson_number,
-                    )
-                    return True
-                self.lessons[idx] = new_lesson
-                self._sort_lessons()
+                del self.lessons[idx]
                 await self._persist_lessons()
                 self.async_set_updated_data(self._build_schedule_data())
                 return True
         return False
+
+    async def update_lesson(
+        self,
+        weekday: str,
+        lesson_number: int,
+        updates: dict[str, Any],
+        lesson_uid: str | None = None,
+    ) -> bool:
+        """Update an existing lesson.
+
+        v2.5.7: addresses the lesson by its unique lesson_uid when
+        provided — unique even in a slot that still holds legacy
+        duplicates (the "wrong subject in the edit form" bug).
+        Falls back to the first (weekday, lesson_number) match for
+        callers without a uid.
+        """
+        if lesson_uid:
+            for idx, lesson in enumerate(self.lessons):
+                if (
+                    lesson.get(CONF_LESSON_UID) == lesson_uid
+                    and lesson.get(CONF_WEEKDAY) == weekday
+                ):
+                    return await self._apply_lesson_update(idx, updates)
+        for idx, lesson in enumerate(self.lessons):
+            if lesson.get(CONF_WEEKDAY) == weekday and lesson.get(CONF_LESSON_NUMBER) == lesson_number:
+                return await self._apply_lesson_update(idx, updates)
+        return False
+
+    async def _apply_lesson_update(self, idx: int, updates: dict[str, Any]) -> bool:
+        """Shared update core for uid and slot addressing (v2.5.7).
+
+        Replaces the lesson dict instead of mutating it — a fresh
+        dict guarantees new_data differs from the previously
+        persisted entry.data even if all field values are equal
+        (second line of defence behind the deep copy in __init__).
+        """
+        lesson = self.lessons[idx]
+        new_lesson = {**lesson, **updates}
+        if new_lesson == lesson:
+            # No-op save: every submitted value matches the stored
+            # lesson. Nothing changed, nothing to persist — HA's
+            # async_update_entry would skip the write anyway
+            # (new_data == entry.data). Detect it here so the
+            # anomaly guard in _persist_lessons stays reserved for
+            # real regressions (v2.5.3).
+            _LOGGER.debug(
+                "update_lesson: no changes for %s #%s — nothing to persist",
+                lesson.get(CONF_WEEKDAY),
+                lesson.get(CONF_LESSON_NUMBER),
+            )
+            return True
+        self.lessons[idx] = new_lesson
+        self._sort_lessons()
+        await self._persist_lessons()
+        self.async_set_updated_data(self._build_schedule_data())
+        return True
 
     def get_schedule(self, weekday: str | None = None) -> list[dict[str, Any]] | dict[str, list]:
         """Get the schedule for a specific day or all days."""

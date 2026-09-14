@@ -58,6 +58,9 @@ jobs:
       - name: Unit tests (calendar logic)
         run: |
           python3 tests/test_calendar_logic.py
+      - name: Unit tests (lesson logic)
+        run: |
+          python3 tests/test_lesson_logic.py
       - name: Binary sensor platform present
         run: |
           test -f custom_components/school_schedule/binary_sensor.py
