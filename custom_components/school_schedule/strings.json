@@ -14,6 +14,10 @@
     }
   },
   "options": {
+    "error": {
+      "subject_required": "Bitte ein Fach angeben (bei Pause optional).",
+      "slot_taken": "Diese Stundennummer ist für diesen Wochentag bereits vergeben."
+    },
     "step": {
       "init": {
         "title": "Stundenplan verwalten",
@@ -44,10 +48,6 @@
           "icon": "Icon (mdi:)",
           "is_break": "Als Pause markieren",
           "apply_to_all_days": "Auf alle Tage anwenden"
-        },
-        "errors": {
-          "subject_required": "Bitte ein Fach angeben (bei Pause optional).",
-          "slot_taken": "Diese Stundennummer ist für diesen Wochentag bereits vergeben."
         }
       },
       "remove_lesson": {
@@ -72,9 +72,6 @@
           "color": "Farbe (Hex)",
           "icon": "Icon (mdi:)",
           "is_break": "Als Pause markieren"
-        },
-        "errors": {
-          "subject_required": "Bitte ein Fach angeben (bei Pause optional)."
         }
       }
     }
