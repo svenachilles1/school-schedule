@@ -41,7 +41,7 @@ from school_schedule.const import STATUS_SCHOOL_DAY, STATUS_WEEKEND  # noqa: E40
 TZ = timezone(timedelta(hours=2))  # CEST — deterministic, no system dependency
 
 
-def _lesson(weekday, number, subject, start, end, room="101", teacher="Menz"):
+def _lesson(weekday, number, subject, start, end, room="101", teacher="Müller"):
     return {
         "weekday": weekday,
         "lesson_number": number,
@@ -80,9 +80,9 @@ class TestBuildEventsWeek(unittest.TestCase):
 
     def setUp(self):
         self.lessons = [
-            _lesson("monday", 1, "Mathe", "07:30", "08:15"),
+            _lesson("monday", 1, "Mathe", "08:00", "08:45"),
             _lesson("monday", 2, "Pause", "10:30", "11:00", room="", teacher=""),
-            _lesson("friday", 1, "Sport", "13:30", "15:00", room="Turnhalle"),
+            _lesson("friday", 1, "Sport", "14:00", "15:30", room="Sporthalle"),
         ]
         self.periods = []
 
@@ -92,7 +92,7 @@ class TestBuildEventsWeek(unittest.TestCase):
         self.assertEqual(len(monday_events), 2)
         self.assertEqual(monday_events[0]["summary"], "Mathe")
         self.assertEqual(monday_events[0]["location"], "101")
-        self.assertEqual(monday_events[0]["description"], "Menz")
+        self.assertEqual(monday_events[0]["description"], "Müller")
 
     def test_weekend_days_have_no_events(self):
         events = build_events(self.lessons, self.periods, MON, MON + timedelta(days=6), TZ)
@@ -107,7 +107,7 @@ class TestBuildEventsWeek(unittest.TestCase):
         events = build_events(self.lessons, self.periods, MON, MON + timedelta(days=13), TZ)
         sport = [e for e in events if e["summary"] == "Sport"]
         self.assertEqual(len(sport), 2)  # two Fridays in range
-        self.assertEqual(sport[0]["location"], "Turnhalle")
+        self.assertEqual(sport[0]["location"], "Sporthalle")
 
     def test_events_sorted_by_start(self):
         events = build_events(self.lessons, self.periods, MON, MON + timedelta(days=6), TZ)
@@ -125,7 +125,7 @@ class TestBuildEventsHolidaySkip(unittest.TestCase):
     """School-free days vanish from the calendar — same priority as binary sensor."""
 
     def setUp(self):
-        self.lessons = [_lesson("monday", 1, "Mathe", "07:30", "08:15")]
+        self.lessons = [_lesson("monday", 1, "Mathe", "08:00", "08:45")]
         # Monday 2026-09-14 as a public holiday:
         self.holiday = [{
             "starts_on": MON,
@@ -161,13 +161,13 @@ class TestNextUpcomingEvent(unittest.TestCase):
 
     def setUp(self):
         self.lessons = [
-            _lesson("monday", 1, "Mathe", "07:30", "08:15"),
-            _lesson("monday", 2, "Englisch", "08:15", "09:00"),
+            _lesson("monday", 1, "Mathe", "08:00", "08:45"),
+            _lesson("monday", 2, "Englisch", "08:45", "09:30"),
         ]
         self.periods = []
 
     def test_running_lesson_wins(self):
-        now = datetime(2026, 9, 14, 7, 45, tzinfo=TZ)  # inside Mathe
+        now = datetime(2026, 9, 14, 8, 15, tzinfo=TZ)  # inside Mathe
         ev = next_upcoming_event(self.lessons, self.periods, now)
         self.assertIsNotNone(ev)
         self.assertEqual(ev["summary"], "Mathe")
@@ -178,7 +178,7 @@ class TestNextUpcomingEvent(unittest.TestCase):
         self.assertEqual(ev["summary"], "Mathe")
 
     def test_ended_lesson_yields_next(self):
-        now = datetime(2026, 9, 14, 8, 30, tzinfo=TZ)  # Mathe over, Englisch running
+        now = datetime(2026, 9, 14, 8, 50, tzinfo=TZ)  # Mathe over, Englisch running
         ev = next_upcoming_event(self.lessons, self.periods, now)
         self.assertEqual(ev["summary"], "Englisch")
 
@@ -186,8 +186,8 @@ class TestNextUpcomingEvent(unittest.TestCase):
         # Sunday 2026-09-20, 18:00 — next school day is Monday 2026-09-21
         now = datetime(2026, 9, 20, 18, 0, tzinfo=TZ)
         lessons = [
-            _lesson("monday", 1, "Mathe", "07:30", "08:15"),
-            _lesson("tuesday", 1, "Englisch", "08:15", "09:00"),
+            _lesson("monday", 1, "Mathe", "08:00", "08:45"),
+            _lesson("tuesday", 1, "Englisch", "08:45", "09:30"),
         ]
         ev = next_upcoming_event(lessons, self.periods, now)
         self.assertIsNotNone(ev)
@@ -215,11 +215,11 @@ class TestNextUpcomingEvent(unittest.TestCase):
 
 class TestEdgeCases(unittest.TestCase):
     def test_empty_window_reversed_range(self):
-        events = build_events([_lesson("monday", 1, "Mathe", "07:30", "08:15")], [], MON + timedelta(days=1), MON, TZ)
+        events = build_events([_lesson("monday", 1, "Mathe", "08:00", "08:45")], [], MON + timedelta(days=1), MON, TZ)
         self.assertEqual(events, [])
 
     def test_broken_end_time_gets_30min_bump(self):
-        lesson = _lesson("monday", 1, "Mathe", "07:30", "")
+        lesson = _lesson("monday", 1, "Mathe", "08:00", "")
         events = build_events([lesson], [], MON, MON, TZ)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["end"] - events[0]["start"], timedelta(minutes=30))
@@ -236,7 +236,7 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_overlapping_boundary_event_included(self):
         # Lesson Monday 07:30–08:15; window ends Monday 07:00 → no overlap
-        lesson = _lesson("monday", 1, "Mathe", "07:30", "08:15")
+        lesson = _lesson("monday", 1, "Mathe", "08:00", "08:45")
         self.assertEqual(build_events([lesson], [], MON, MON, TZ), build_events([lesson], [], MON, MON, TZ))
         # datetime-level trim happens in calendar.py's async_get_events
 
