@@ -36,6 +36,7 @@ from .const import (
 )
 from .coordinator import SchoolScheduleCoordinator
 from .entity import SchoolScheduleEntity
+from .lesson_logic import count_real_lessons
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,9 +87,12 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
 
     @property
     def native_value(self) -> int:
-        """Return the number of lessons for this sensor's day."""
-        lessons = self._get_lessons()
-        return len(lessons)
+        """Return the number of real lessons for this sensor's day.
+
+        v2.5.9: breaks (is_break=True) are not teaching lessons and are
+        excluded from the count.
+        """
+        return count_real_lessons(self._get_lessons())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -96,7 +100,8 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         lessons = self._get_lessons()
         attrs: dict[str, Any] = {
             "child_name": self._child_name,
-            "total_lessons": len(lessons),
+            "total_lessons": count_real_lessons(lessons),
+            "break_count": sum(1 for lesson in lessons if lesson.get(CONF_IS_BREAK, False)),
             "lessons": [],
         }
 
