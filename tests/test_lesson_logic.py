@@ -65,8 +65,8 @@ print("ensure_lesson_uids: existing uid untouched                        [OK]")
 # with lesson_number 4 — the card's edit form then showed the first
 # match's subject instead of the clicked lesson's subject.
 dup = [
-    {"weekday": "tuesday", "lesson_number": 3, "subject": "FA, Sg Eng 1/2"},
-    {"weekday": "tuesday", "lesson_number": 4, "subject": "Mittags & Gartenpause", "is_break": True},
+    {"weekday": "tuesday", "lesson_number": 3, "subject": "Englisch"},
+    {"weekday": "tuesday", "lesson_number": 4, "subject": "Mittagspause", "is_break": True},
     {"weekday": "tuesday", "lesson_number": 4, "subject": "Sport"},
 ]
 ensure_lesson_uids(dup)
