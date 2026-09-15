@@ -14,7 +14,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from .const import CONF_LESSON_NUMBER, CONF_LESSON_UID, CONF_WEEKDAY
+from .const import CONF_IS_BREAK, CONF_LESSON_NUMBER, CONF_LESSON_UID, CONF_WEEKDAY
+
+
+def count_real_lessons(lessons: list[dict[str, Any]]) -> int:
+    """Number of real lessons, breaks excluded (v2.5.9).
+
+    Breaks (is_break=True) are schedule entries for display purposes, not
+    actual teaching lessons — they must not inflate any lesson counter
+    (sensor state, total_lessons, card badges).
+    """
+    return sum(1 for lesson in lessons if not lesson.get(CONF_IS_BREAK, False))
 
 
 def lesson_uid_for(weekday: str | None, number: Any) -> str:

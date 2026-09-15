@@ -61,6 +61,9 @@ jobs:
       - name: Unit tests (lesson logic)
         run: |
           python3 tests/test_lesson_logic.py
+      - name: Unit tests (break count)
+        run: |
+          python3 tests/test_count_real_lessons.py
       - name: Binary sensor platform present
         run: |
           test -f custom_components/school_schedule/binary_sensor.py

@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.5.8
+ * School Schedule Card — Ultra Premium v2.5.9
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
@@ -846,7 +846,8 @@ class SchoolScheduleCard extends HTMLElement {
     let heroHtml = "";
     if (this._today) {
       let heroPills = "";
-      const totalToday = todayLessons;
+      const realToday = (this._today.lessons || []).filter((l) => l.is_break !== true).length;
+      const totalToday = realToday;
       const heroGrad = currentLesson
         ? this._getColor(currentLesson)
         : "var(--primary-color, #7c4dff)";
@@ -1038,7 +1039,7 @@ class SchoolScheduleCard extends HTMLElement {
     for (const day of dayOrder) {
       const dd = this._days[day] || { lessons: [], label: day.slice(0,2), full: day };
       const isToday = day === this._todayKey;
-      const count = dd.lessons.length;
+      const count = (dd.lessons || []).filter((l) => l.is_break !== true).length;
 
       let dayClass = "day";
       if (isToday) dayClass += " day-active";
@@ -1077,7 +1078,7 @@ class SchoolScheduleCard extends HTMLElement {
     const todayFull = dayFullNames[this._todayKey] || this._t("today");
 
     const lessons = this._today ? this._today.lessons : [];
-    const count = lessons.length;
+    const count = lessons.filter((l) => l.is_break !== true).length;
     const day = this._todayKey;
 
     let headerHtml = '<div class="day-header dh-active">' +
@@ -2132,6 +2133,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.5.8",
+  description: "Stundenplan-Karte Ultra Premium v2.5.9",
   preview: false,
 });
