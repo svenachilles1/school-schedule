@@ -17,6 +17,7 @@ from .const import (
     CONF_WEEKDAY,
     CONF_LESSON_NUMBER,
     CONF_LESSON_UID,
+    CONF_ABSENCES,
     DOMAIN,
     UPDATE_INTERVAL_MINUTES,
     WEEKDAYS,
@@ -27,6 +28,14 @@ from .holiday_logic import (
     next_school_day,
 )
 from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
+from .absence_logic import (
+    get_entry_absences,
+    prune_absences,
+    sick_summary,
+    upsert_absence,
+    remove_absence,
+)
+from .const import ABSENCE_TYPE_SICK
 from .holidays import (
     SharedHolidaysCoordinator,
     federal_state_from_entry,
@@ -58,6 +67,11 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self.lessons: list[dict[str, Any]] = copy.deepcopy(
             entry.data.get(CONF_LESSONS, [])
         )
+        # v2.6.0: sick-day absences. Same deep-copy discipline as lessons —
+        # self.absences must stay fully detached from entry.data so an
+        # in-place edit can never silently alias into the stored dict
+        # (the v2.5.1/v2.5.2 persistence lesson, applied from day one).
+        self.absences: list[dict[str, Any]] = get_entry_absences(dict(entry.data))
         # v2.5.7: backfill deterministic lesson uids for legacy
         # entries so the card can address every lesson uniquely.
         ensure_lesson_uids(self.lessons)
@@ -84,13 +98,23 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             self.entry = updated
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data — periodic refresh, reload lessons from config entry."""
+        """Fetch data — periodic refresh, reload lessons/absences from config entry."""
         updated = self.hass.config_entries.async_get_entry(self.entry.entry_id)
         if updated is not None:
             self.entry = updated
             # Deep copy — see __init__: never share dicts with entry.data
             self.lessons = copy.deepcopy(updated.data.get(CONF_LESSONS, []))
             ensure_lesson_uids(self.lessons)
+            self.absences = get_entry_absences(dict(updated.data))
+
+        # v2.6.0: prune absence entries older than the retention window.
+        # Runs on every coordinator refresh (15 min) so entry.data cannot
+        # grow forever even when no absence service is ever called.
+        today = datetime.now().date()
+        pruned, changed = prune_absences(self.absences, today)
+        if changed:
+            self.absences = pruned
+            await self._persist_absences()
 
         # Refresh holiday data if stale (at most one API request per 24h
         # per federal state — shared between all children in that state).
@@ -117,6 +141,9 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         today_h = day_status(today_date, periods)
         tomorrow_h = day_status(tomorrow_date, periods)
 
+        # v2.6.0: complete sick-day picture (streak, attest thresholds).
+        sick = sick_summary(self.absences, today_date, periods)
+
         data: dict[str, Any] = {
             "child_name": self.child_name,
             "today": self._get_lessons_for_day(today_weekday),
@@ -137,6 +164,18 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             "next_public_holiday": next_event(today_date, periods, event_type="holiday"),
             "holidays_count": len(periods),
             "holidays_last_updated": self.holidays.last_updated_at,
+            # Sick days / absences (v2.6.0)
+            "sick_today": sick["sick_today"],
+            "sick_tomorrow": sick["sick_tomorrow"],
+            "sick_streak": sick["streak"],
+            "sick_streak_active_today": sick["streak_active_today"],
+            "attest_required": sick["attest_required"],
+            "attest_warning": sick["attest_warning"],
+            "last_sick_day": sick["last_sick_day"],
+            "sick_days_year": sick["sick_days_year"],
+            "next_sick_dates": sick["next_sick_dates"],
+            "recent_sick_days": sick["recent_sick_days"],
+            "absence_count": sum(1 for e in self.absences if e.get("type") == "sick"),
         }
 
         for day in WEEKDAYS:
@@ -308,3 +347,60 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             )
         self._refresh_entry_ref()
         _LOGGER.debug("Persisted %d lessons for %s", len(self.lessons), self.child_name)
+
+    # ─── Sick days / absences (v2.6.0) ─────────────────────────────────
+
+    async def mark_sick_day(self, day: date, note: str = "") -> bool:
+        """Mark ``day`` as a sick day (idempotent, note upsert).
+
+        The day is stored verbatim — marking yesterday sick today (Nachtrag)
+        and marking tomorrow sick today (Vormeldung) both work because the
+        date is always explicit, never defaulted to "now".
+        """
+        new_absences, changed = upsert_absence(self.absences, day, ABSENCE_TYPE_SICK, note)
+        if not changed:
+            _LOGGER.debug(
+                "mark_sick_day: %s for %s unchanged (already marked, same note)",
+                day.isoformat(), self.child_name,
+            )
+            return True
+        self.absences = new_absences
+        await self._persist_absences()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "mark_sick_day: %s marked sick for %s (note=%r, total sick days now %d)",
+            day.isoformat(), self.child_name, note,
+            sum(1 for e in self.absences if e.get("type") == ABSENCE_TYPE_SICK),
+        )
+        return True
+
+    async def unmark_sick_day(self, day: date) -> bool:
+        """Remove the sick mark for ``day``. Returns False when it was not marked."""
+        new_absences, removed = remove_absence(self.absences, day, ABSENCE_TYPE_SICK)
+        if not removed:
+            return False
+        self.absences = new_absences
+        await self._persist_absences()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "unmark_sick_day: %s unmarked for %s",
+            day.isoformat(), self.child_name,
+        )
+        return True
+
+    async def _persist_absences(self) -> None:
+        """Persist absences to the config entry data (same discipline as lessons).
+
+        Same isolation guarantees as _persist_lessons: a fresh dict built
+        from entry.data so async_update_entry always sees a real change,
+        never an aliasing no-op (the v2.5.2 lesson).
+        """
+        new_data = {
+            **self.entry.data,
+            CONF_ABSENCES: copy.deepcopy(self.absences),
+        }
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self._refresh_entry_ref()
+        _LOGGER.debug(
+            "Persisted %d absences for %s", len(self.absences), self.child_name
+        )

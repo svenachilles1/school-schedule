@@ -31,6 +31,7 @@ from .const import (
     SENSOR_WEDNESDAY,
     SENSOR_THURSDAY,
     SENSOR_FRIDAY,
+    SENSOR_ABSENCES,
     WEEKDAYS,
     WEEKDAY_TRANSLATION_KEYS,
 )
@@ -49,6 +50,7 @@ SENSOR_TYPES: list[tuple[str, str, str]] = [
     (SENSOR_WEDNESDAY, "Mittwoch", "mdi:calendar-text"),
     (SENSOR_THURSDAY, "Donnerstag", "mdi:calendar-text"),
     (SENSOR_FRIDAY, "Freitag", "mdi:calendar-text"),
+    (SENSOR_ABSENCES, "Fehltage", "mdi:medical-bag"),
 ]
 
 
@@ -64,6 +66,7 @@ async def async_setup_entry(
         SchoolScheduleSensor(coordinator, sensor_type, child_name, display_name, icon)
         for sensor_type, display_name, icon in SENSOR_TYPES
     ]
+    entities.append(AbsenceSensor(coordinator, child_name))
     async_add_entities(entities)
 
 
@@ -247,3 +250,62 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "is_break": lesson.get(CONF_IS_BREAK, False),
                 }
         return None
+
+
+class AbsenceSensor(SchoolScheduleEntity, SensorEntity):
+    """Sick-day counter per child: ``sensor.stundenplan_<kind>_fehlzeiten`` (v2.6.0).
+
+    State = sick days in the current school year (Aug 1 - Jul 31).
+    Attributes expose the full picture for the card, dashboards and
+    automations: sick_today, sick_tomorrow, streak, attest_warning,
+    attest_required, last_sick_day, next_sick_dates, absence_count.
+
+    Deliberately a separate class from SchoolScheduleSensor — that class is
+    built around a day's lesson list (weekday mapping, current/next lesson);
+    forcing the absence type through it would drag dead logic along.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: SchoolScheduleCoordinator,
+        child_name: str,
+    ) -> None:
+        """Initialize the absence sensor."""
+        super().__init__(coordinator, SENSOR_ABSENCES, child_name)
+        self._child_name = child_name
+        self._attr_name = "Fehltage"
+        self._attr_icon = "mdi:medical-bag"
+
+    @property
+    def native_value(self) -> int:
+        """Sick days in the current school year."""
+        data = self.coordinator.data
+        if data is None:
+            return 0
+        return int(data.get("sick_days_year", 0))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Full sick-day picture as attributes."""
+        data = self.coordinator.data
+        if data is None:
+            return {"child_name": self._child_name}
+        attrs: dict[str, Any] = {"child_name": self._child_name}
+        for key in (
+            "sick_today",
+            "sick_tomorrow",
+            "sick_streak",
+            "sick_streak_active_today",
+            "attest_warning",
+            "attest_required",
+            "last_sick_day",
+            "next_sick_dates",
+            "recent_sick_days",
+            "absence_count",
+            "sick_days_year",
+        ):
+            if key in data:
+                attrs[key] = data[key]
+        return attrs
