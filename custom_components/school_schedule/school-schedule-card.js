@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.6.0
+ * School Schedule Card — Ultra Premium v2.7.0
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
@@ -60,6 +60,10 @@ class SchoolScheduleCard extends HTMLElement {
     this._starsPrev = 0;
     this._sick = null;
     this._sickModal = false;
+    // v2.7.0: editable sick-day manager state
+    this._sickEdit = null;         // ISO date of the entry being edited
+    this._sickDelete = null;      // ISO date pending delete confirmation
+    this._sickRange = false;      // range form visible
   }
 
   static get STRINGS() {
@@ -122,6 +126,22 @@ class SchoolScheduleCard extends HTMLElement {
         sick_note: "Notiz (optional)",
         sick_history: "Letzte Kranktage",
         sick_no_history: "Keine Kranktage erfasst",
+      sick_list_title: "KRANKTAGE",
+      sick_list_count: "Tage",
+      sick_edit_btn: "Bearbeiten",
+      sick_delete_btn: "Löschen",
+      sick_delete_confirm: "Wirklich löschen?",
+      sick_edit_mode: "Bearbeiten",
+      sick_edit_save: "Speichern",
+      sick_edit_note: "Notiz",
+      sick_edit_note_ph: "Notiz ändern...",
+      sick_range_title: "KRANKMELDUNG (VON–BIS)",
+      sick_range_from: "Von",
+      sick_range_to: "Bis",
+      sick_range_note: "Notiz (für alle Tage)",
+      sick_range_btn: "Krank von–bis markieren",
+      sick_today_badge: "heute",
+      sick_planned_badge: "geplant",
         attest_warning_text: "Ab dem 3. Kranktag ist ein \u00e4rztliches Attest n\u00f6tig \u2014 bei weiterer Krankheit morgen mitbringen!",
         attest_required_text: "Attestpflicht: Ab dem 3. Kranktag in Folge wird ein \u00e4rztliches Attest ben\u00f6tigt!",
         sick_day: "Tag",
@@ -186,6 +206,22 @@ class SchoolScheduleCard extends HTMLElement {
         sick_note: "Note (optional)",
         sick_history: "Recent sick days",
         sick_no_history: "No sick days recorded",
+      sick_list_title: "SICK DAYS",
+      sick_list_count: "days",
+      sick_edit_btn: "Edit",
+      sick_delete_btn: "Delete",
+      sick_delete_confirm: "Really delete?",
+      sick_edit_mode: "Edit",
+      sick_edit_save: "Save",
+      sick_edit_note: "Note",
+      sick_edit_note_ph: "Change note...",
+      sick_range_title: "SICK NOTE (FROM–TO)",
+      sick_range_from: "From",
+      sick_range_to: "To",
+      sick_range_note: "Note (for all days)",
+      sick_range_btn: "Mark sick from–to",
+      sick_today_badge: "today",
+      sick_planned_badge: "planned",
         attest_warning_text: "From the 3rd sick day a doctor's note is required — bring one tomorrow if still sick!",
         attest_required_text: "Doctor's note required: from the 3rd consecutive sick day a medical certificate is needed!",
         sick_day: "day",
@@ -307,6 +343,9 @@ class SchoolScheduleCard extends HTMLElement {
       attestRequired: sAttr.attest_required === true,
       lastSickDay: sAttr.last_sick_day || null,
       recent: Array.isArray(sAttr.recent_sick_days) ? sAttr.recent_sick_days : [],
+      // v2.7.0: full editable list + today ISO (badges "heute"/"geplant")
+      entries: Array.isArray(sAttr.sick_entries) ? sAttr.sick_entries : [],
+      isoToday: this._isoDate("today"),
     };
     const todayJs = new Date().getDay();
     this._todayKey = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][todayJs];
@@ -371,6 +410,16 @@ class SchoolScheduleCard extends HTMLElement {
         break;
       case "sick-today": this._sickAction("today"); break;
       case "sick-tomorrow": this._sickAction("tomorrow"); break;
+      // v2.7.0: editable list + range
+      case "sick-edit": this._sickEdit = e.target.closest("[data-date]").getAttribute("data-date") || null; this._sickDelete = null; this._render(); break;
+      case "sick-cancel-edit": this._sickEdit = null; this._render(); break;
+      case "sick-save-edit": this._sickSaveEdit(e.target.closest("[data-date]").getAttribute("data-date")); break;
+      case "sick-delete": this._sickDelete = e.target.closest("[data-date]").getAttribute("data-date") || null; this._sickEdit = null; this._render(); break;
+      case "sick-delete-confirm-yes": this._sickDeleteEntry(e.target.closest("[data-date]").getAttribute("data-date")); break;
+      case "sick-delete-confirm-no": this._sickDelete = null; this._render(); break;
+      case "sick-range-toggle": this._sickRange = !this._sickRange; this._render(); break;
+      case "sick-range-cancel": this._sickRange = false; this._render(); break;
+      case "sick-range-save": this._sickSaveRange(); break;
     }
   }
 
@@ -598,11 +647,19 @@ class SchoolScheduleCard extends HTMLElement {
 
   _closeSickModal() {
     this._sickModal = false;
-    this._render();
+    this._sickEdit = null;
+    this._sickDelete = null;
+    this._sickRange = false;
+    // v2.7.0: re-sync from live hass states — optimistic updates inside
+    // the modal are healed here with server truth (the render guard
+    // suppresses state pushes while the modal is open).
+    this._updateData();
   }
 
   _sickAction(target) {
-    // target: "today" | "tomorrow" — toggles the mark for that day
+    // target: "today" | "tomorrow" — toggles the mark for that day.
+    // v2.7.0: the modal STAYS OPEN so the updated list is visible
+    // immediately (state push re-renders with fresh entries).
     const iso = this._isoDate(target);
     if (!iso) return;
     const marked = target === "today"
@@ -615,14 +672,43 @@ class SchoolScheduleCard extends HTMLElement {
         child_name: this._childName,
         date: iso,
       });
+      this._sickOptimisticRemove(iso);
     } else {
       this._hass.callService("school_schedule", "mark_sick_day", {
         child_name: this._childName,
         date: iso,
         note: note,
       });
+      this._sickOptimisticAdd(iso, note);
     }
-    this._sickModal = false;
+  }
+
+  // v2.7.0: optimistic local state updates — instant feedback while the
+  // state push is suppressed by the modal render guard. Healed on close.
+  _sickOptimisticAdd(iso, note) {
+    if (!this._sick) this._sick = { entries: [] };
+    if (!Array.isArray(this._sick.entries)) this._sick.entries = [];
+    if (!this._sick.entries.some(function(e) { return e.date === iso; })) {
+      this._sick.entries.push({ date: iso, note: note || "" });
+      this._sick.entries.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+      this._sick.yearCount = (this._sick.yearCount || 0) + 1;
+    }
+    if (iso === this._sick.isoToday) this._sick.today = true;
+    if (iso === this._isoDate("tomorrow")) this._sick.tomorrow = true;
+    this._render();
+  }
+
+  _sickOptimisticRemove(iso) {
+    if (!this._sick) return;
+    if (Array.isArray(this._sick.entries)) {
+      const before = this._sick.entries.length;
+      this._sick.entries = this._sick.entries.filter(function(e) { return e.date !== iso; });
+      if (this._sick.entries.length < before) {
+        this._sick.yearCount = Math.max(0, (this._sick.yearCount || 0) - 1);
+      }
+    }
+    if (iso === this._sick.isoToday) this._sick.today = false;
+    if (iso === this._isoDate("tomorrow")) this._sick.tomorrow = false;
     this._render();
   }
 
@@ -632,6 +718,76 @@ class SchoolScheduleCard extends HTMLElement {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  // ── v2.7.0: sick-day list actions ────────────────────────────────────
+
+  _sickSaveEdit(iso) {
+    if (!iso) return;
+    const noteEl = this._shadow.querySelector("#ssc-sick-edit-note");
+    const note = noteEl ? noteEl.value.trim() : "";
+    this._hass.callService("school_schedule", "update_sick_day", {
+      child_name: this._childName,
+      date: iso,
+      note: note,
+    });
+    // optimistic: update the note in the local list
+    if (this._sick && Array.isArray(this._sick.entries)) {
+      this._sick.entries = this._sick.entries.map(function(e) {
+        return e.date === iso ? { date: e.date, note: note } : e;
+      });
+    }
+    this._sickEdit = null;
+    this._render();
+  }
+
+  _sickDeleteEntry(iso) {
+    if (!iso) return;
+    this._hass.callService("school_schedule", "unmark_sick_day", {
+      child_name: this._childName,
+      date: iso,
+    });
+    this._sickDelete = null;
+    this._sickOptimisticRemove(iso);
+  }
+
+  _sickSaveRange() {
+    const fromEl = this._shadow.querySelector("#ssc-sick-range-from");
+    const toEl = this._shadow.querySelector("#ssc-sick-range-to");
+    const noteEl = this._shadow.querySelector("#ssc-sick-range-note");
+    const from = fromEl ? fromEl.value : "";
+    const to = toEl ? toEl.value : "";
+    const note = noteEl ? noteEl.value.trim() : "";
+    if (!from || !to) return;
+    this._hass.callService("school_schedule", "mark_sick_range", {
+      child_name: this._childName,
+      start_date: from,
+      end_date: to,
+      note: note,
+    });
+    // optimistic: add every missing day in the range to the local list
+    if (this._sick && from <= to) {
+      if (!Array.isArray(this._sick.entries)) this._sick.entries = [];
+      const fd = new Date(from + "T00:00:00");
+      const td = new Date(to + "T00:00:00");
+      let added = 0;
+      while (fd <= td) {
+        const iso = fd.getFullYear() + "-" + String(fd.getMonth() + 1).padStart(2, "0") + "-" + String(fd.getDate()).padStart(2, "0");
+        if (!this._sick.entries.some(function(e) { return e.date === iso; })) {
+          this._sick.entries.push({ date: iso, note: note || "" });
+          added++;
+        }
+        fd.setDate(fd.getDate() + 1);
+      }
+      if (added > 0) {
+        this._sick.entries.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+        this._sick.yearCount = (this._sick.yearCount || 0) + added;
+      }
+      this._sick.today = this._sick.entries.some(function(e) { return e.date === this._sick.isoToday; }.bind(this));
+      this._sick.tomorrow = this._sick.entries.some(function(e) { return e.date === this._isoDate("tomorrow"); }.bind(this));
+    }
+    this._sickRange = false;
+    this._render();
   }
 
   // === Form Logic ===
@@ -1383,28 +1539,98 @@ class SchoolScheduleCard extends HTMLElement {
   _renderSickModal() {
     if (!this._sickModal) return "";
     const s = this._sick || {};
+    const entries = (s.entries || []).slice();
     const todayMarked = s.today === true;
     const tomorrowMarked = s.tomorrow === true;
-    const history = this._getSickHistory();
-    let historyHtml = "";
-    if (history.length > 0) {
-      historyHtml = '<div class="sick-history-title">' + this._t("sick_history") + '</div>' +
-        '<div class="sick-history-list">' +
-          history.map(function(h) {
-            return '<div class="sick-history-item">' +
-              '<span class="sick-history-date">' + h.date + '</span>' +
-              (h.note ? '<span class="sick-history-note">' + h.note + '</span>' : '') +
-            '</div>';
-          }).join("") +
-        '</div>';
-    } else {
-      historyHtml = '<div class="sick-history-empty">' + this._t("sick_no_history") + '</div>';
-    }
+    const todayIso = s.isoToday || "";
+    const tomorrowIso = this._isoDate("tomorrow");
+
     const attestHtml = s.attestRequired === true
       ? '<div class="sick-modal-attest sick-modal-attest-required"><ha-icon icon="mdi:certificate" style="--mdc-icon-size:16px"></ha-icon>' + this._t("attest_required_text") + '</div>'
       : (s.attestWarning === true
         ? '<div class="sick-modal-attest sick-modal-attest-warning"><ha-icon icon="mdi:alert" style="--mdc-icon-size:16px"></ha-icon>' + this._t("attest_warning_text") + '</div>'
         : "");
+
+    // v2.7.0: editable sick-day list
+    let listHtml = "";
+    if (entries.length > 0) {
+      const itemsHtml = entries.map(function(entry) {
+        const d = entry.date || "";
+        const note = entry.note || "";
+        const isToday = d === todayIso;
+        const isFuture = d > todayIso;
+        let badge = "";
+        if (isToday) {
+          badge = '<span class="sick-entry-badge sick-entry-badge-today">' + this._t("sick_today_badge") + '</span>';
+        } else if (isFuture) {
+          badge = '<span class="sick-entry-badge sick-entry-badge-planned">' + this._t("sick_planned_badge") + '</span>';
+        }
+        const isEditing = this._sickEdit === d;
+        const isDeleting = this._sickDelete === d;
+        let rowActionHtml = "";
+        if (isEditing) {
+          rowActionHtml =
+            '<div class="sick-entry-edit-row">' +
+              '<input class="ssc-input sick-entry-note-input" id="ssc-sick-edit-note" type="text" value="' + this._escAttr(note) + '" placeholder="..." />' +
+              '<button class="sick-icon-btn" data-action="sick-save-edit" data-date="' + d + '" title="' + this._t("sick_edit_save") + '"><ha-icon icon="mdi:check" style="--mdc-icon-size:16px"></ha-icon></button>' +
+              '<button class="sick-icon-btn" data-action="sick-cancel-edit" title="' + this._t("cancel") + '"><ha-icon icon="mdi:close" style="--mdc-icon-size:16px"></ha-icon></button>' +
+            '</div>';
+        } else if (isDeleting) {
+          rowActionHtml =
+            '<div class="sick-entry-edit-row">' +
+              '<span class="sick-delete-confirm-text">' + this._t("sick_delete_confirm") + '</span>' +
+              '<button class="sick-icon-btn sick-icon-btn-danger" data-action="sick-delete-confirm-yes" data-date="' + d + '"><ha-icon icon="mdi:check" style="--mdc-icon-size:16px"></ha-icon></button>' +
+              '<button class="sick-icon-btn" data-action="sick-delete-confirm-no" title="' + this._t("cancel") + '"><ha-icon icon="mdi:close" style="--mdc-icon-size:16px"></ha-icon></button>' +
+            '</div>';
+        } else {
+          rowActionHtml =
+            '<div class="sick-entry-actions">' +
+              '<button class="sick-icon-btn" data-action="sick-edit" data-date="' + d + '" title="' + this._t("sick_edit_btn") + '"><ha-icon icon="mdi:pencil" style="--mdc-icon-size:14px"></ha-icon></button>' +
+              '<button class="sick-icon-btn sick-icon-btn-danger" data-action="sick-delete" data-date="' + d + '" title="' + this._t("sick_delete_btn") + '"><ha-icon icon="mdi:delete" style="--mdc-icon-size:14px"></ha-icon></button>' +
+            '</div>';
+        }
+        return '<div class="sick-entry' + (isEditing || isDeleting ? " sick-entry-active" : "") + '">' +
+          '<div class="sick-entry-main">' +
+            '<span class="sick-entry-date">' + d + '</span>' +
+            badge +
+            (note && !isEditing ? '<span class="sick-entry-note">' + this._escHtml(note) + '</span>' : "") +
+          '</div>' +
+          rowActionHtml +
+        '</div>';
+      }.bind(this)).join("");
+      listHtml = '<div class="sick-history-title">' + this._t("sick_list_title") + ' <span class="sick-list-count">(' + entries.length + ' ' + this._t("sick_list_count") + ')</span></div>' +
+        '<div class="sick-entry-list">' + itemsHtml + '</div>';
+    } else {
+      listHtml = '<div class="sick-history-title">' + this._t("sick_list_title") + '</div>' +
+        '<div class="sick-history-empty">' + this._t("sick_no_history") + '</div>';
+    }
+
+    // v2.7.0: range form (Von–Bis)
+    let rangeHtml = "";
+    if (this._sickRange) {
+      rangeHtml = '<div class="sick-range-form">' +
+        '<div class="sick-history-title">' + this._t("sick_range_title") + '</div>' +
+        '<div class="ssc-field-row">' +
+          '<div class="ssc-field">' +
+            '<span class="ssc-field-label">' + this._t("sick_range_from") + '</span>' +
+            '<input class="ssc-input" type="date" id="ssc-sick-range-from" value="' + todayIso + '" />' +
+          '</div>' +
+          '<div class="ssc-field">' +
+            '<span class="ssc-field-label">' + this._t("sick_range_to") + '</span>' +
+            '<input class="ssc-input" type="date" id="ssc-sick-range-to" value="' + todayIso + '" />' +
+          '</div>' +
+        '</div>' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("sick_range_note") + '</span>' +
+          '<input class="ssc-input" type="text" id="ssc-sick-range-note" placeholder="..." />' +
+        '</div>' +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="sick-range-cancel">' + this._t("cancel") + '</button>' +
+          '<button class="ssc-btn ssc-btn-save" data-action="sick-range-save">' + this._t("sick_range_btn") + '</button>' +
+        '</div>' +
+      '</div>';
+    }
+
     return '<div class="ssc-modal-overlay" data-action="cancel-sick-bg">' +
       '<div class="ssc-form-card ssc-sick-card">' +
         '<div class="ssc-form-title">' + this._t("sick_modal_title") + '</div>' +
@@ -1424,7 +1650,12 @@ class SchoolScheduleCard extends HTMLElement {
           '<span class="ssc-field-label">' + this._t("sick_note") + '</span>' +
           '<input class="ssc-input" type="text" id="ssc-sick-note" placeholder="..." />' +
         '</div>' +
-        historyHtml +
+        '<button class="sick-btn sick-btn-range" data-action="sick-range-toggle">' +
+          '<ha-icon icon="mdi:calendar-range" style="--mdc-icon-size:18px"></ha-icon>' +
+          '<span>' + this._t("sick_range_title") + '</span>' +
+        '</button>' +
+        rangeHtml +
+        listHtml +
         '<div class="ssc-form-buttons">' +
           '<button class="ssc-btn" data-action="cancel-sick">' + this._t("cancel") + '</button>' +
         '</div>' +
@@ -1432,7 +1663,17 @@ class SchoolScheduleCard extends HTMLElement {
     '</div>';
   }
 
-  _getSickHistory() {
+  // v2.7.0: escape helpers for user notes in HTML attributes / text
+  _escHtml(text) {
+    return String(text == null ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  _escAttr(text) {
+    return this._escHtml(text).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+_getSickHistory() {
     // v2.6.0: recent sick days (last 5) with notes from the absence
     // sensor attributes — the coordinator keeps the full list.
     const s = this._sick || {};
@@ -1714,6 +1955,59 @@ class SchoolScheduleCard extends HTMLElement {
       .sick-history-date { font-weight: 700; color: #ef9a9a; }
       .sick-history-note { opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sick-history-empty { font-size: 0.78em; opacity: 0.55; padding: 8px 2px; }
+      /* v2.7.0: editable sick-day list */
+      .sick-list-count { text-transform: none; letter-spacing: 0; opacity: 0.7; }
+      .sick-entry-list { display: flex; flex-direction: column; gap: 5px; max-height: 220px; overflow-y: auto; margin-bottom: 6px; }
+      .sick-entry {
+        display: flex; flex-direction: column; gap: 4px;
+        padding: 7px 10px; border-radius: 10px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid transparent;
+        transition: border-color 0.15s ease;
+      }
+      .sick-entry:hover { border-color: rgba(239,83,80,0.25); }
+      .sick-entry-active { border-color: rgba(239,83,80,0.45); background: color-mix(in srgb, #ef5350 8%, transparent); }
+      .sick-entry-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .sick-entry-date { font-size: 0.8em; font-weight: 700; color: #ef9a9a; font-family: monospace; }
+      .sick-entry-badge {
+        font-size: 0.58em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+        padding: 2px 8px; border-radius: 100px; white-space: nowrap;
+      }
+      .sick-entry-badge-today {
+        background: color-mix(in srgb, #ef5350 25%, transparent);
+        border: 1px solid color-mix(in srgb, #ef5350 50%, transparent);
+        color: #ffcdd2;
+      }
+      .sick-entry-badge-planned {
+        background: color-mix(in srgb, #ffb74d 18%, transparent);
+        border: 1px solid color-mix(in srgb, #ffb74d 40%, transparent);
+        color: #ffcc80;
+      }
+      .sick-entry-note { font-size: 0.72em; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+      .sick-entry-actions { display: flex; gap: 6px; }
+      .sick-entry-actions { margin-left: auto; }
+      .sick-icon-btn {
+        width: 26px; height: 26px; border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        background: color-mix(in srgb, var(--primary-color, #7c4dff) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 25%, transparent);
+        cursor: pointer; padding: 0; flex-shrink: 0;
+        transition: border-color 0.15s ease, background 0.15s ease;
+      }
+      .sick-icon-btn:hover { border-color: color-mix(in srgb, #ef5350 55%, transparent); background: color-mix(in srgb, #ef5350 10%, transparent); }
+      .sick-icon-btn-danger { border-color: color-mix(in srgb, #f44336 30%, transparent); }
+      .sick-icon-btn-danger:hover { border-color: #f44336; background: color-mix(in srgb, #f44336 15%, transparent); }
+      .sick-entry-edit-row { display: flex; align-items: center; gap: 6px; }
+      .sick-entry-edit-row .ssc-input { flex: 1; min-width: 0; }
+      .sick-delete-confirm-text { font-size: 0.72em; font-weight: 700; color: #ef9a9a; }
+      .sick-range-form {
+        margin-top: 10px; padding: 12px;
+        border-radius: 12px;
+        background: color-mix(in srgb, #ef5350 6%, transparent);
+        border: 1px dashed color-mix(in srgb, #ef5350 30%, transparent);
+      }
+      .sick-btn-range { margin-top: 4px; justify-content: flex-start; }
+      .sick-btn-range:hover { border-color: color-mix(in srgb, #ef5350 55%, transparent); background: color-mix(in srgb, #ef5350 8%, transparent); }
 
       /* === Hero summary === */
       .hero {
@@ -2398,6 +2692,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.6.0",
+  description: "Stundenplan-Karte Ultra Premium v2.7.0",
   preview: false,
 });

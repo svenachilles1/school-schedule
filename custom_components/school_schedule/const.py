@@ -153,9 +153,15 @@ CONF_ABSENCES: Final[str] = "absences"
 # reuse the same infrastructure with additional types — deliberately NOT
 # implemented now (only the schema is prepared for it).
 ABSENCE_TYPE_SICK: Final[str] = "sick"
+# v2.7.0: sane upper bound for a sick range (mark_sick_range) — a typo like
+# a wrong year must not silently create a decade of entries.
+ABSENCE_RANGE_MAX_DAYS: Final[int] = 366
 
 # Service names (absences)
 SERVICE_MARK_SICK_DAY: Final[str] = "mark_sick_day"
+# v2.7.0: additional absence services — range marking + entry editing
+SERVICE_MARK_SICK_RANGE: Final[str] = "mark_sick_range"
+SERVICE_UPDATE_SICK_DAY: Final[str] = "update_sick_day"
 SERVICE_UNMARK_SICK_DAY: Final[str] = "unmark_sick_day"
 
 # Service fields (absences)

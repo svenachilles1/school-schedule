@@ -30,8 +30,10 @@ from .holiday_logic import (
 from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
 from .absence_logic import (
     get_entry_absences,
+    mark_sick_range,
     prune_absences,
     sick_summary,
+    update_absence_note,
     upsert_absence,
     remove_absence,
 )
@@ -175,7 +177,14 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             "sick_days_year": sick["sick_days_year"],
             "next_sick_dates": sick["next_sick_dates"],
             "recent_sick_days": sick["recent_sick_days"],
-            "absence_count": sum(1 for e in self.absences if e.get("type") == "sick"),
+            # v2.7.0: full absence list for the card's editable sick-day
+            # manager (the modal list needs every entry, not just 5)
+            "sick_entries": [
+                {"date": str(e.get("date")), "note": str(e.get("note") or "")}
+                for e in self.absences
+                if e.get("type") == ABSENCE_TYPE_SICK
+            ],
+            "absence_count": sum(1 for e in self.absences if e.get("type") == ABSENCE_TYPE_SICK),
         }
 
         for day in WEEKDAYS:
@@ -385,6 +394,56 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         _LOGGER.info(
             "unmark_sick_day: %s unmarked for %s",
             day.isoformat(), self.child_name,
+        )
+        return True
+
+    async def mark_sick_range(self, start: date, end: date, note: str = "") -> int:
+        """Mark ``start..end`` (inclusive) as sick days (v2.7.0).
+
+        Returns the number of days actually added/updated. Raises
+        ValueError (translated by the service handler) when the range is
+        invalid — the absence list stays untouched then.
+        """
+        new_absences, changed, error = mark_sick_range(self.absences, start, end, note)
+        if error is not None:
+            raise ValueError(error)
+        if changed == 0:
+            _LOGGER.debug(
+                "mark_sick_range: %s..%s for %s unchanged (all days already marked, same note)",
+                start.isoformat(), end.isoformat(), self.child_name,
+            )
+            return 0
+        self.absences = new_absences
+        await self._persist_absences()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "mark_sick_range: %s..%s marked sick for %s (%d days, note=%r)",
+            start.isoformat(), end.isoformat(), self.child_name, changed, note,
+        )
+        return changed
+
+    async def update_sick_day(self, day: date, note: str) -> bool:
+        """Update the note of an existing sick entry (v2.7.0).
+
+        Kept separate from mark_sick_day: editing must NEVER create an
+        entry that does not exist (an edit on a deleted row would silently
+        resurrect it). Returns False when ``day`` is not marked sick.
+        """
+        existing = [
+            e for e in self.absences
+            if e.get("date") == day.isoformat() and e.get("type") == ABSENCE_TYPE_SICK
+        ]
+        if not existing:
+            return False
+        if str(existing[0].get("note") or "") == str(note or ""):
+            return True  # no-op edit — already has this note
+        new_absences, _ = update_absence_note(self.absences, day, note)
+        self.absences = new_absences
+        await self._persist_absences()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "update_sick_day: note updated for %s (%s): %r",
+            day.isoformat(), self.child_name, note,
         )
         return True
 

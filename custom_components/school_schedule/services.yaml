@@ -295,6 +295,65 @@ unmark_sick_day:
       selector:
         text:
 
+mark_sick_range:
+  name: Krankmeldung (Von–Bis)
+  description: Markiert alle Tage von Start- bis Enddatum (inklusive) als krank. Beide Daten sind Pflicht.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    start_date:
+      name: Von
+      description: Erstes Krankdatum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-01"
+      selector:
+        text:
+    end_date:
+      name: Bis
+      description: Letztes Krankdatum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-05"
+      selector:
+        text:
+    note:
+      name: Notiz
+      description: Optionale Notiz für alle Tage der Krankmeldung.
+      required: false
+      example: "Grippe"
+      selector:
+        text:
+
+update_sick_day:
+  name: Kranktag bearbeiten
+  description: Aktualisiert die Notiz eines bestehenden Kranktags. Der Tag muss bereits als krank markiert sein.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: Krankdatum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-01"
+      selector:
+        text:
+    note:
+      name: Notiz
+      description: Neue Notiz für diesen Kranktag.
+      required: false
+      example: "Erkältung"
+      selector:
+        text:
+
 get_schedule:
   name: Stundenplan abrufen
   description: Ruft den Stundenplan für einen bestimmten Wochentag ab.
