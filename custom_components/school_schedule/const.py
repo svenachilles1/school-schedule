@@ -144,8 +144,45 @@ STATUS_VACATION: Final[str] = "vacation"
 STATUS_PUBLIC_HOLIDAY: Final[str] = "public_holiday"
 STATUS_WEEKEND: Final[str] = "weekend"
 
+# ─── Absences / sick days (v2.6.0) ────────────────────────────────────
+CONF_ABSENCES: Final[str] = "absences"
+
+# Absence types. The override infrastructure is generic (a per-day override
+# list in the config entry); "sick" is the first consumer. The separate
+# date-based-exceptions backlog item (school trips, half days) can later
+# reuse the same infrastructure with additional types — deliberately NOT
+# implemented now (only the schema is prepared for it).
+ABSENCE_TYPE_SICK: Final[str] = "sick"
+
+# Service names (absences)
+SERVICE_MARK_SICK_DAY: Final[str] = "mark_sick_day"
+SERVICE_UNMARK_SICK_DAY: Final[str] = "unmark_sick_day"
+
+# Service fields (absences)
+ATTR_DATE: Final[str] = "date"
+ATTR_NOTE: Final[str] = "note"
+
+# German school rule: from the 3rd consecutive sick school day a doctor's
+# note is required. warning fires on the 2nd day ("from tomorrow a note is
+# needed if the child stays sick"), required from day 3 on.
+ATTEST_REQUIRED_FROM_STREAK: Final[int] = 3
+ATTEST_WARNING_FROM_STREAK: Final[int] = 2
+
+# A sick-day streak survives a gap of up to N consecutive school-free days
+# (weekend = 2, holiday bridges up to 3). Longer gaps (vacations) break the
+# streak — a sick day after the summer break is a new illness, not day N+1.
+SICK_STREAK_BREAK_GAP: Final[int] = 3
+
+# Sick-day entries older than N days are pruned on coordinator refresh so
+# entry.data cannot grow forever. 365 days covers a full school year of
+# history for the yearly counter.
+ABSENCE_RETENTION_DAYS: Final[int] = 365
+
 # Binary sensor types
 BSENSOR_SCHULFREI: Final[str] = "schulfrei"
+
+# Sensor type: absence counter per child (v2.6.0)
+SENSOR_ABSENCES: Final[str] = "fehlzeiten"
 
 # Holiday refresh interval (API cache in entry data, refreshed by coordinator)
 HOLIDAY_REFRESH_HOURS: Final[int] = 24

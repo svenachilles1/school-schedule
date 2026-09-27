@@ -34,6 +34,9 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Holiday caching (v2.5.0):** Holiday data is fetched once per 24h per federal state (shared across children), cached in the config entry, and survives restarts and network outages
 - **Federal state service (v2.5.0):** `set_federal_state` switches the state without reloading the integration
 - **Calendar entity per child (v2.5.4):** `calendar.stundenplan_<child>_kalender` — every lesson becomes a real calendar event on its weekday (repeating weekly), school-free days are skipped automatically (vacation, public holidays, weekends). Native calendar cards, automations ("lesson starts in X min"), and calendar-based triggers work out of the box. Read-only: lessons are managed via services/card
+- **Sick-day tracking (v2.6.0):** `sensor.stundenplan_<child>_fehlzeiten` per child — state = sick days in the current school year (Aug–Jul), attributes for sick_today/sick_tomorrow, current streak, attest thresholds, last sick day and recent history
+- **Sick-day services (v2.6.0):** `mark_sick_day` / `unmark_sick_day` — mark today (default), or any date: retroactive entries (yesterday) and pre-marking (tomorrow) both work, with an optional note ("Fieber", "Erkältung")
+- **Attest rule (v2.6.0):** German school rule — from the 3rd consecutive sick day a doctor's note is required. `attest_warning` fires at day 2 ("bring a note tomorrow if still sick"), `attest_required` from day 3 on. School-free days inside a streak (weekend, public holiday) don't break it; vacations do
 - **Visual card editor:** Height/width configurable via the dashboard editor (no YAML)
 - **Automatic card setup:** The integration registers the Lovelace card resource automatically (browser_mod-style) — no manual `www/` copy, no manual resource registration, automatic cache busting on updates
 
@@ -44,6 +47,8 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Star gamification + confetti (v2.5.6):** One star per real lesson — grey while pending, golden with glow when earned (pop animation on new stars); a colorful confetti burst fires exactly once when school is over
 - **Child switcher:** Switch between all configured children directly in the card (segmented control) — one card instead of one per child
 - **Holiday countdown:** Hero pill shows "days until holidays" (or remaining vacation days) — data from mehr-schulferien.de, click to open the holiday calendar
+- **Sick-day pill + modal (v2.6.0):** Hero pill shows the yearly sick-day count (or the running streak when sick today) — click opens the sick-day modal: "Heute krank" / "Morgen krank" buttons (toggle, with optional note), attest status, and the last 5 sick days
+- **Attest banner (v2.6.0):** Warning banner below the hero at streak day 2 ("bring a doctor's note tomorrow if still sick") and a pulsing required banner from day 3 on — clicking opens the sick-day modal
 - **Day view toggle:** Switch between week view (5-column grid) and day view (single column, larger cards) via button
 - **Inline management:** Add, edit, and delete lessons directly from the card — no need to open the config flow
   - **Add:** "+" button per day opens inline form

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any
 
 import voluptuous as vol
@@ -21,6 +22,7 @@ from .const import (
     DEFAULT_BREAK_COLOR, DEFAULT_BREAK_ICON, DEFAULT_BREAK_SUBJECT,
     SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE,
     SERVICE_SET_FEDERAL_STATE,
+    SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, ATTR_DATE, ATTR_NOTE,
 )
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
@@ -75,6 +77,30 @@ SET_FEDERAL_STATE_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("federal_state"): vol.In(FEDERAL_STATES),
 })
+
+# v2.6.0: sick-day services. ``date`` is optional — default today — but can
+# be any ISO date: marking yesterday sick today (Nachtrag) and marking
+# tomorrow sick today (Vormeldung) both work through the explicit date.
+MARK_SICK_DAY_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Optional("date", default=None): vol.Any(None, cv.string),
+    vol.Optional("note", default=""): cv.string,
+})
+
+UNMARK_SICK_DAY_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Optional("date", default=None): vol.Any(None, cv.string),
+})
+
+
+def _parse_service_date(value: str | None) -> date | None:
+    """Parse an optional ISO date from a service call; None -> today (v2.6.0)."""
+    if value is None or str(value).strip() == "":
+        return date.today()
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except ValueError:
+        return None
 
 
 def _find_coordinator(hass: HomeAssistant, child_name: str) -> SchoolScheduleCoordinator:
@@ -244,11 +270,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Federal state for %s is now %s", child_name, federal_state
             )
 
+        async def handle_mark_sick_day(call: ServiceCall) -> None:
+            """Handle mark_sick_day service call (v2.6.0)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_service_date(call.data.get("date"))
+            if day is None:
+                raise HomeAssistantError(
+                    "Invalid date — use ISO format YYYY-MM-DD"
+                )
+            note = str(call.data.get("note", "") or "")
+            await coordinator.mark_sick_day(day, note)
+
+        async def handle_unmark_sick_day(call: ServiceCall) -> None:
+            """Handle unmark_sick_day service call (v2.6.0)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_service_date(call.data.get("date"))
+            if day is None:
+                raise HomeAssistantError(
+                    "Invalid date — use ISO format YYYY-MM-DD"
+                )
+            removed = await coordinator.unmark_sick_day(day)
+            if not removed:
+                raise HomeAssistantError(
+                    f"{day.isoformat()} was not marked sick for {child_name}"
+                )
+
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_SET_FEDERAL_STATE, handle_set_federal_state, schema=SET_FEDERAL_STATE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_MARK_SICK_DAY, handle_mark_sick_day, schema=MARK_SICK_DAY_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_UNMARK_SICK_DAY, handle_unmark_sick_day, schema=UNMARK_SICK_DAY_SCHEMA)
         _LOGGER.info("School Schedule services registered")
 
     return True
@@ -275,7 +330,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(v, SchoolScheduleCoordinator)
         ]
         if not remaining:
-            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE]:
+            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY]:
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
 

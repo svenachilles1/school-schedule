@@ -250,6 +250,51 @@ update_lesson:
       selector:
         boolean:
 
+mark_sick_day:
+  name: Kranktag markieren
+  description: Markiert einen Tag als Kranktag (Fehltage-Tracking). Ohne Datumsangabe gilt heute; mit Datum funktionieren Nachträge und Vormeldungen.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes, dessen Fehltag erfasst wird.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: 'Datum des Kranktags im Format JJJJ-MM-TT. Leer = heute. Auch Nachträge (gestern) und Vormeldungen (morgen) möglich.'
+      required: false
+      example: "2026-09-29"
+      selector:
+        text:
+    note:
+      name: Notiz
+      description: Optionale Notiz zum Kranktag (z.B. "Erkältung", "Fieber").
+      required: false
+      example: Erkältung
+      selector:
+        text:
+
+unmark_sick_day:
+  name: Kranktag entfernen
+  description: Entfernt die Krank-Markierung für einen Tag. Ohne Datumsangabe gilt heute.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: 'Datum im Format JJJJ-MM-TT. Leer = heute.'
+      required: false
+      example: "2026-09-29"
+      selector:
+        text:
+
 get_schedule:
   name: Stundenplan abrufen
   description: Ruft den Stundenplan für einen bestimmten Wochentag ab.

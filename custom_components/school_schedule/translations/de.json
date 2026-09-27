@@ -107,6 +107,14 @@
     "set_federal_state": {
       "name": "Bundesland festlegen",
       "description": "Legt das Bundesland für Ferien- und Feiertagsberechnung fest."
+    },
+    "mark_sick_day": {
+      "name": "Kranktag markieren",
+      "description": "Markiert einen Tag als Kranktag (Fehltage-Tracking). Ohne Datum gilt heute; Nachträge und Vormeldungen per Datumsangabe möglich."
+    },
+    "unmark_sick_day": {
+      "name": "Kranktag entfernen",
+      "description": "Entfernt die Krank-Markierung für einen Tag. Ohne Datum gilt heute."
     }
   }
 }

@@ -1,11 +1,13 @@
 /**
- * School Schedule Card — Ultra Premium v2.5.9
+ * School Schedule Card — Ultra Premium v2.6.0
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
  *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion,
  *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss,
- *           eindeutige lesson_uid-Adressierung (Bugfix: falsches Fach im Bearbeiten-Formular)
+ *           eindeutige lesson_uid-Adressierung (Bugfix: falsches Fach im Bearbeiten-Formular),
+ *           Fehltage-Tracking (v2.6.0): Krank-Pill im Hero, Krank-Modal mit Heute/Morgen-Button,
+ *           Attest-Warnbanner (ab 3. Kranktagen Attestpflicht), Notizen + Historie
  */
 
 const HOLIDAY_STATES = [
@@ -56,6 +58,8 @@ class SchoolScheduleCard extends HTMLElement {
     this._confettiFired = false;
     this._progressDay = "";
     this._starsPrev = 0;
+    this._sick = null;
+    this._sickModal = false;
   }
 
   static get STRINGS() {
@@ -109,6 +113,20 @@ class SchoolScheduleCard extends HTMLElement {
         day_full_sunday: "Sonntag",
         day_full: {monday:"Montag",tuesday:"Dienstag",wednesday:"Mittwoch",thursday:"Donnerstag",friday:"Freitag"},
         day_short: {monday:"Mo",tuesday:"Di",wednesday:"Mi",thursday:"Do",friday:"Fr"},
+        sick_days_label: "FEHLTAGE (JAHR)",
+        sick_streak_label: "KRANK HEUTE",
+        sick_modal_title: "Krankmeldung",
+        sick_modal_sub: "Tag als Kranktag markieren oder Markierung entfernen.",
+        sick_today_btn: "Heute krank",
+        sick_tomorrow_btn: "Morgen krank",
+        sick_note: "Notiz (optional)",
+        sick_history: "Letzte Kranktage",
+        sick_no_history: "Keine Kranktage erfasst",
+        attest_warning_text: "Ab dem 3. Kranktag ist ein \u00e4rztliches Attest n\u00f6tig \u2014 bei weiterer Krankheit morgen mitbringen!",
+        attest_required_text: "Attestpflicht: Ab dem 3. Kranktag in Folge wird ein \u00e4rztliches Attest ben\u00f6tigt!",
+        sick_day: "Tag",
+        sick_days: "Tage",
+        sick_streak_short: "Tag(e) krank in Folge",
       },
       en: {
         title: "Schedule",
@@ -159,6 +177,20 @@ class SchoolScheduleCard extends HTMLElement {
         day_full_sunday: "Sunday",
         day_full: {monday:"Monday",tuesday:"Tuesday",wednesday:"Wednesday",thursday:"Thursday",friday:"Friday"},
         day_short: {monday:"Mo",tuesday:"Tu",wednesday:"We",thursday:"Th",friday:"Fr"},
+        sick_days_label: "SICK DAYS (YEAR)",
+        sick_streak_label: "SICK TODAY",
+        sick_modal_title: "Sick note",
+        sick_modal_sub: "Mark a day as sick or remove the mark.",
+        sick_today_btn: "Sick today",
+        sick_tomorrow_btn: "Sick tomorrow",
+        sick_note: "Note (optional)",
+        sick_history: "Recent sick days",
+        sick_no_history: "No sick days recorded",
+        attest_warning_text: "From the 3rd sick day a doctor's note is required — bring one tomorrow if still sick!",
+        attest_required_text: "Doctor's note required: from the 3rd consecutive sick day a medical certificate is needed!",
+        sick_day: "day",
+        sick_days: "days",
+        sick_streak_short: "day(s) sick in a row",
       },
     };
   }
@@ -262,9 +294,23 @@ class SchoolScheduleCard extends HTMLElement {
       current: todayEntity.attributes.current_lesson || null,
       next: todayEntity.attributes.next_lesson || null,
     } : null;
+    // v2.6.0: sick-day data from the absence sensor (fehlzeiten)
+    const sickEntity = this._findEntity("fehlzeiten");
+    const sAttr = sickEntity ? (sickEntity.attributes || {}) : {};
+    this._sick = {
+      yearCount: sickEntity ? parseInt(sickEntity.state, 10) || 0 : 0,
+      today: sAttr.sick_today === true,
+      tomorrow: sAttr.sick_tomorrow === true,
+      streak: sAttr.sick_streak || 0,
+      streakActiveToday: sAttr.sick_streak_active_today === true,
+      attestWarning: sAttr.attest_warning === true,
+      attestRequired: sAttr.attest_required === true,
+      lastSickDay: sAttr.last_sick_day || null,
+      recent: Array.isArray(sAttr.recent_sick_days) ? sAttr.recent_sick_days : [],
+    };
     const todayJs = new Date().getDay();
     this._todayKey = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][todayJs];
-    if (!this._showForm && !this._confirmDelete) {
+    if (!this._showForm && !this._confirmDelete && !this._sickModal) {
       this._render();
     }
   }
@@ -318,6 +364,13 @@ class SchoolScheduleCard extends HTMLElement {
       case "cancel-form-bg":
         if (!e.target.closest(".ssc-form-card")) this._closeForm();
         break;
+      case "open-sick-modal": this._openSickModal(); break;
+      case "cancel-sick": this._closeSickModal(); break;
+      case "cancel-sick-bg":
+        if (!e.target.closest(".ssc-sick-card")) this._closeSickModal();
+        break;
+      case "sick-today": this._sickAction("today"); break;
+      case "sick-tomorrow": this._sickAction("tomorrow"); break;
     }
   }
 
@@ -536,6 +589,51 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
+  // === Sick days (v2.6.0) ===
+
+  _openSickModal() {
+    this._sickModal = true;
+    this._render();
+  }
+
+  _closeSickModal() {
+    this._sickModal = false;
+    this._render();
+  }
+
+  _sickAction(target) {
+    // target: "today" | "tomorrow" — toggles the mark for that day
+    const iso = this._isoDate(target);
+    if (!iso) return;
+    const marked = target === "today"
+      ? !!(this._sick && this._sick.today)
+      : !!(this._sick && this._sick.tomorrow);
+    const noteEl = this._shadow.querySelector("#ssc-sick-note");
+    const note = noteEl ? noteEl.value.trim() : "";
+    if (marked) {
+      this._hass.callService("school_schedule", "unmark_sick_day", {
+        child_name: this._childName,
+        date: iso,
+      });
+    } else {
+      this._hass.callService("school_schedule", "mark_sick_day", {
+        child_name: this._childName,
+        date: iso,
+        note: note,
+      });
+    }
+    this._sickModal = false;
+    this._render();
+  }
+
+  _isoDate(target) {
+    const d = new Date();
+    if (target === "tomorrow") d.setDate(d.getDate() + 1);
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
   // === Form Logic ===
 
   _openAddForm(weekday) {
@@ -732,6 +830,49 @@ class SchoolScheduleCard extends HTMLElement {
     '</div>';
   }
 
+  _renderSickPill() {
+    // v2.6.0: sick-day hero pill — click opens the sick-day modal
+    const s = this._sick || {};
+    const active = s.today === true;
+    const sickGrad = "background:linear-gradient(135deg,#ef5350,#e53935);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text";
+    const numColor = active ? sickGrad : "color:var(--disabled-text-color,rgba(255,255,255,0.15))";
+    const label = active
+      ? (s.streak > 1 ? this._t("sick_days_label") : this._t("sick_streak_label"))
+      : this._t("sick_days_label");
+    const numHtml = active
+      ? '<div class="hero-stat-num" style="' + sickGrad + '">' + (s.streak || 1) + '</div>'
+      : '<div class="hero-stat-num" style="' + numColor + '">' + (s.yearCount || 0) + '</div>';
+    let sub = "";
+    if (active) {
+      sub = '<div class="hero-holiday-name" style="color:#ef9a9a">' + (s.streak || 1) + " " + this._t(s.streak > 1 ? "sick_days" : "sick_day") + " \u2192 " + this._t("sick_streak_short") + '</div>';
+    } else if (s.tomorrow === true) {
+      sub = '<div class="hero-holiday-name" style="color:#ffcc80">' + this._t("sick_tomorrow_btn") + '</div>';
+    }
+    return '<div class="hero-stat hero-sick" data-action="open-sick-modal">' +
+      numHtml +
+      '<div class="hero-stat-label">' + label + '</div>' +
+      sub +
+    '</div>';
+  }
+
+  _renderSickBanner() {
+    // v2.6.0: attest banner below the hero when thresholds are reached
+    const s = this._sick || {};
+    if (s.attestRequired === true) {
+      return '<div class="sick-banner sick-banner-required" data-action="open-sick-modal">' +
+        '<ha-icon icon="mdi:certificate" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("attest_required_text") + '</span>' +
+      '</div>';
+    }
+    if (s.attestWarning === true) {
+      return '<div class="sick-banner sick-banner-warning" data-action="open-sick-modal">' +
+        '<ha-icon icon="mdi:alert" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("attest_warning_text") + '</span>' +
+      '</div>';
+    }
+    return "";
+  }
+
 
   _calcProgress() {
     const lessons = (this._today && Array.isArray(this._today.lessons)) ? this._today.lessons : [];
@@ -890,9 +1031,12 @@ class SchoolScheduleCard extends HTMLElement {
       }
 
       heroPills += this._renderHolidayCountdownPill();
+      heroPills += this._renderSickPill();
 
       heroHtml = '<div class="hero">' + heroPills + '</div>';
     }
+
+    const sickBannerHtml = (this._today && this._sick) ? this._renderSickBanner() : "";
 
     const progressHtml = this._today ? this._renderProgressSection() : "";
 
@@ -929,6 +1073,7 @@ class SchoolScheduleCard extends HTMLElement {
     // --- Form / Confirm overlays ---
     const formHtml = this._renderForm();
     const confirmHtml = this._renderConfirmDelete();
+    const sickModalHtml = this._renderSickModal();
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
     const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
@@ -952,11 +1097,13 @@ class SchoolScheduleCard extends HTMLElement {
           '</div>' +
           childSwitchHtml +
           heroHtml +
+          sickBannerHtml +
           progressHtml +
           '<div class="content-scroll">' + contentHtml + '</div>' +
         '</div>' +
         formHtml +
         confirmHtml +
+        sickModalHtml +
       '</ha-card>';
 
     if (this._today && this._progress) {
@@ -1233,6 +1380,65 @@ class SchoolScheduleCard extends HTMLElement {
     '</div>';
   }
 
+  _renderSickModal() {
+    if (!this._sickModal) return "";
+    const s = this._sick || {};
+    const todayMarked = s.today === true;
+    const tomorrowMarked = s.tomorrow === true;
+    const history = this._getSickHistory();
+    let historyHtml = "";
+    if (history.length > 0) {
+      historyHtml = '<div class="sick-history-title">' + this._t("sick_history") + '</div>' +
+        '<div class="sick-history-list">' +
+          history.map(function(h) {
+            return '<div class="sick-history-item">' +
+              '<span class="sick-history-date">' + h.date + '</span>' +
+              (h.note ? '<span class="sick-history-note">' + h.note + '</span>' : '') +
+            '</div>';
+          }).join("") +
+        '</div>';
+    } else {
+      historyHtml = '<div class="sick-history-empty">' + this._t("sick_no_history") + '</div>';
+    }
+    const attestHtml = s.attestRequired === true
+      ? '<div class="sick-modal-attest sick-modal-attest-required"><ha-icon icon="mdi:certificate" style="--mdc-icon-size:16px"></ha-icon>' + this._t("attest_required_text") + '</div>'
+      : (s.attestWarning === true
+        ? '<div class="sick-modal-attest sick-modal-attest-warning"><ha-icon icon="mdi:alert" style="--mdc-icon-size:16px"></ha-icon>' + this._t("attest_warning_text") + '</div>'
+        : "");
+    return '<div class="ssc-modal-overlay" data-action="cancel-sick-bg">' +
+      '<div class="ssc-form-card ssc-sick-card">' +
+        '<div class="ssc-form-title">' + this._t("sick_modal_title") + '</div>' +
+        '<div class="ssc-form-day">' + this._t("sick_modal_sub") + '</div>' +
+        attestHtml +
+        '<div class="sick-action-row">' +
+          '<button class="sick-btn' + (todayMarked ? " sick-btn-active" : "") + '" data-action="sick-today">' +
+            '<ha-icon icon="' + (todayMarked ? "mdi:check-circle" : "mdi:thermometer") + '" style="--mdc-icon-size:18px"></ha-icon>' +
+            '<span>' + this._t("sick_today_btn") + (todayMarked ? " ✓" : "") + '</span>' +
+          '</button>' +
+          '<button class="sick-btn' + (tomorrowMarked ? " sick-btn-active" : "") + '" data-action="sick-tomorrow">' +
+            '<ha-icon icon="' + (tomorrowMarked ? "mdi:check-circle" : "mdi:thermometer") + '" style="--mdc-icon-size:18px"></ha-icon>' +
+            '<span>' + this._t("sick_tomorrow_btn") + (tomorrowMarked ? " ✓" : "") + '</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("sick_note") + '</span>' +
+          '<input class="ssc-input" type="text" id="ssc-sick-note" placeholder="..." />' +
+        '</div>' +
+        historyHtml +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="cancel-sick">' + this._t("cancel") + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  _getSickHistory() {
+    // v2.6.0: recent sick days (last 5) with notes from the absence
+    // sensor attributes — the coordinator keeps the full list.
+    const s = this._sick || {};
+    return (s.recent || []).slice(-5);
+  }
+
   static getConfigElement() {
     return document.createElement("school-schedule-card-editor");
   }
@@ -1449,6 +1655,65 @@ class SchoolScheduleCard extends HTMLElement {
         color: #ffb74d;
         max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
+
+      /* === Sick-day pill + attest banner (v2.6.0) === */
+      .hero-sick { cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease; }
+      .hero-sick:hover { border-color: rgba(239,83,80,0.45); box-shadow: 0 4px 18px rgba(239,83,80,0.18); }
+      .sick-banner {
+        display: flex; align-items: center; gap: 8px;
+        margin: 10px 0 0; padding: 8px 12px;
+        border-radius: 12px; font-size: 0.78em; font-weight: 600;
+        cursor: pointer; line-height: 1.35;
+      }
+      .sick-banner-warning {
+        background: color-mix(in srgb, #ffb74d 14%, transparent);
+        border: 1px solid color-mix(in srgb, #ffb74d 35%, transparent);
+        color: #ffcc80;
+      }
+      .sick-banner-required {
+        background: color-mix(in srgb, #ef5350 16%, transparent);
+        border: 1px solid color-mix(in srgb, #ef5350 40%, transparent);
+        color: #ef9a9a;
+        animation: sick-pulse 2.4s ease-in-out infinite;
+      }
+      @keyframes sick-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(239,83,80,0.0); }
+        50% { box-shadow: 0 0 16px 2px rgba(239,83,80,0.25); }
+      }
+      .sick-action-row { display: flex; gap: 10px; margin: 14px 0 10px; }
+      .sick-btn {
+        flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 11px 10px; border-radius: 12px; cursor: pointer;
+        background: color-mix(in srgb, var(--primary-color, #7c4dff) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary-color, #7c4dff) 25%, transparent);
+        color: var(--primary-text-color, #fff);
+        font-size: 0.85em; font-weight: 600; font-family: inherit;
+        transition: border-color .18s ease, background .18s ease;
+      }
+      .sick-btn:hover { border-color: color-mix(in srgb, #ef5350 55%, transparent); background: color-mix(in srgb, #ef5350 10%, transparent); }
+      .sick-btn-active {
+        background: color-mix(in srgb, #ef5350 18%, transparent);
+        border-color: color-mix(in srgb, #ef5350 55%, transparent);
+        color: #ef9a9a;
+      }
+      .sick-modal-attest {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 12px; margin-top: 10px; border-radius: 10px;
+        font-size: 0.76em; font-weight: 600; line-height: 1.35;
+      }
+      .sick-modal-attest-warning { background: color-mix(in srgb, #ffb74d 14%, transparent); border: 1px solid color-mix(in srgb, #ffb74d 35%, transparent); color: #ffcc80; }
+      .sick-modal-attest-required { background: color-mix(in srgb, #ef5350 16%, transparent); border: 1px solid color-mix(in srgb, #ef5350 40%, transparent); color: #ef9a9a; }
+      .sick-history-title { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.65; margin: 14px 0 6px; }
+      .sick-history-list { display: flex; flex-direction: column; gap: 4px; max-height: 130px; overflow-y: auto; }
+      .sick-history-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 10px; border-radius: 8px;
+        background: rgba(255,255,255,0.04);
+        font-size: 0.78em;
+      }
+      .sick-history-date { font-weight: 700; color: #ef9a9a; }
+      .sick-history-note { opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sick-history-empty { font-size: 0.78em; opacity: 0.55; padding: 8px 2px; }
 
       /* === Hero summary === */
       .hero {
@@ -2133,6 +2398,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.5.9",
+  description: "Stundenplan-Karte Ultra Premium v2.6.0",
   preview: false,
 });
