@@ -42,6 +42,12 @@ from .lesson_logic import count_real_lessons
 _LOGGER = logging.getLogger(__name__)
 
 # Sensor definitions: (sensor_type, display_name, icon)
+# NOTE: SENSOR_ABSENCES ("fehlzeiten") is deliberately NOT in this list —
+# it gets its own class (AbsenceSensor, appended in async_setup_entry) with
+# absence-specific state/attributes. A duplicate entry here would create a
+# second entity with the SAME unique_id; whichever registers first wins the
+# registry slot and the lesson-based SchoolScheduleSensor logic would shadow
+# the absence attributes entirely (found in live verification, fixed v2.6.1).
 SENSOR_TYPES: list[tuple[str, str, str]] = [
     (SENSOR_TODAY, "Heute", "mdi:calendar-today"),
     (SENSOR_TOMORROW, "Morgen", "mdi:calendar-tomorrow"),
@@ -50,7 +56,6 @@ SENSOR_TYPES: list[tuple[str, str, str]] = [
     (SENSOR_WEDNESDAY, "Mittwoch", "mdi:calendar-text"),
     (SENSOR_THURSDAY, "Donnerstag", "mdi:calendar-text"),
     (SENSOR_FRIDAY, "Freitag", "mdi:calendar-text"),
-    (SENSOR_ABSENCES, "Fehltage", "mdi:medical-bag"),
 ]
 
 
