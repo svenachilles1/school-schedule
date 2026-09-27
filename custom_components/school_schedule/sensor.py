@@ -308,6 +308,7 @@ class AbsenceSensor(SchoolScheduleEntity, SensorEntity):
             "last_sick_day",
             "next_sick_dates",
             "recent_sick_days",
+            "sick_entries",
             "absence_count",
             "sick_days_year",
         ):

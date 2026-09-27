@@ -210,3 +210,64 @@ print("year counter: Aug 1 boundary correct                            [OK]")
 
 print()
 print("ALL ABSENCE_LOGIC TESTS PASSED ✅")
+
+# ─── mark_sick_range / update_absence_note (v2.7.0) ──────────────────
+
+from school_schedule.absence_logic import mark_sick_range, update_absence_note  # noqa: E402
+
+# Range marks every day inclusive
+lst, added, err = mark_sick_range([], WED, THU, note="Grippe")
+assert err is None and added == 2, (added, err)
+assert [e["date"] for e in lst] == ["2026-09-30", "2026-10-01"]
+assert all(e["type"] == "sick" and e["note"] == "Grippe" for e in lst)
+print("range: marks every day inclusive, note applied             [OK]")
+
+# Single-day range (start == end) works
+lst, added, err = mark_sick_range([], TODAY, TODAY)
+assert err is None and added == 1 and lst[0]["date"] == "2026-09-29"
+print("range: single-day range (start == end) works               [OK]")
+
+# Idempotent: re-marking the same range with same note changes nothing
+base_range, _, _ = mark_sick_range([], WED, THU, note="Grippe")
+lst2, added2, err2 = mark_sick_range(base_range, WED, THU, note="Grippe")
+assert err2 is None and added2 == 0 and lst2 == base_range
+print("range: idempotent re-mark (same note) -> 0 changes          [OK]")
+
+# Re-marking with a DIFFERENT note updates existing entries
+lst3, added3, err3 = mark_sick_range(base_range, WED, THU, note="Erkaeltung")
+assert err3 is None and added3 == 2
+assert all(e["note"] == "Erkaeltung" for e in lst3)
+print("range: re-mark with new note updates entries               [OK]")
+
+# Start after end -> error, input untouched
+lst4, added4, err4 = mark_sick_range(lst, THU, WED)
+assert err4 == "start_after_end" and added4 == 0 and lst4 == lst
+print("range: start > end rejected, list untouched                [OK]")
+
+# Range spanning a weekend marks ALL calendar days (Sa/So too)
+lst5, _, _ = mark_sick_range([], FRI, MON)
+assert len(lst5) == 4
+assert [e["date"] for e in lst5] == ["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28"]
+print("range: weekend days are marked too (calendar semantics)     [OK]")
+
+# Range cap: >366 days rejected, list untouched
+from datetime import timedelta
+lst6, added6, err6 = mark_sick_range([], TODAY, TODAY + timedelta(days=366))
+assert err6 == "range_too_long" and added6 == 0 and lst6 == []
+print("range: >366 days rejected (cap), list untouched             [OK]")
+
+# Existing entries outside the range survive untouched
+base = _mark(FRI, note="alt")
+lst7, _, err7 = mark_sick_range(base, WED, THU)
+assert err7 is None
+assert [e["date"] for e in lst7] == ["2026-09-25", "2026-09-30", "2026-10-01"]
+assert lst7[0]["note"] == "alt"
+print("range: entries outside the range survive untouched         [OK]")
+
+# update_absence_note: edits note of an existing day
+lst8, changed = update_absence_note(base, FRI, "neu")
+assert changed is True and lst8[0]["note"] == "neu" and lst8[0]["date"] == "2026-09-25"
+print("note-update: existing day note updated                     [OK]")
+
+print()
+print("absence_logic v2.7.0 range tests: ALL GREEN")

@@ -22,7 +22,8 @@ from .const import (
     DEFAULT_BREAK_COLOR, DEFAULT_BREAK_ICON, DEFAULT_BREAK_SUBJECT,
     SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE,
     SERVICE_SET_FEDERAL_STATE,
-    SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, ATTR_DATE, ATTR_NOTE,
+    SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY,
+    SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, ATTR_DATE, ATTR_NOTE,
 )
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
@@ -92,6 +93,20 @@ UNMARK_SICK_DAY_SCHEMA = vol.Schema({
     vol.Optional("date", default=None): vol.Any(None, cv.string),
 })
 
+# v2.7.0: range marking + entry editing
+MARK_SICK_RANGE_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("start_date"): cv.string,
+    vol.Required("end_date"): cv.string,
+    vol.Optional("note", default=""): cv.string,
+})
+
+UPDATE_SICK_DAY_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("date"): cv.string,
+    vol.Optional("note", default=""): cv.string,
+})
+
 
 def _parse_service_date(value: str | None) -> date | None:
     """Parse an optional ISO date from a service call; None -> today (v2.6.0)."""
@@ -101,6 +116,23 @@ def _parse_service_date(value: str | None) -> date | None:
         return date.fromisoformat(str(value).strip()[:10])
     except ValueError:
         return None
+
+
+def _parse_required_date(value: str | None) -> date:
+    """Parse a MANDATORY ISO date from a service call (v2.7.0).
+
+    Raises HomeAssistantError with a clear message on empty/invalid input —
+    silent "today" fallbacks are only allowed where the date is genuinely
+    optional (mark_sick_day). Range/edit calls MUST be explicit.
+    """
+    if value is None or str(value).strip() == "":
+        raise HomeAssistantError("A date is required — use ISO format YYYY-MM-DD")
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except ValueError:
+        raise HomeAssistantError(
+            f"Invalid date {value!r} — use ISO format YYYY-MM-DD"
+        ) from None
 
 
 def _find_coordinator(hass: HomeAssistant, child_name: str) -> SchoolScheduleCoordinator:
@@ -297,6 +329,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"{day.isoformat()} was not marked sick for {child_name}"
                 )
 
+        async def handle_mark_sick_range(call: ServiceCall) -> None:
+            """Handle mark_sick_range service call (v2.7.0)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            start = _parse_required_date(call.data.get("start_date"))
+            end = _parse_required_date(call.data.get("end_date"))
+            note = str(call.data.get("note", "") or "")
+            try:
+                added = await coordinator.mark_sick_range(start, end, note)
+            except ValueError as err:
+                if "start_after_end" in str(err):
+                    raise HomeAssistantError(
+                        f"Start date {start.isoformat()} is after end date {end.isoformat()} — swap them"
+                    ) from err
+                if "range_too_long" in str(err):
+                    raise HomeAssistantError(
+                        f"Range {start.isoformat()}..{end.isoformat()} is too long (max 366 days)"
+                    ) from err
+                raise HomeAssistantError(str(err)) from err
+            if added == 0:
+                raise HomeAssistantError(
+                    f"{start.isoformat()}..{end.isoformat()} already fully marked sick for {child_name} (same note)"
+                )
+
+        async def handle_update_sick_day(call: ServiceCall) -> None:
+            """Handle update_sick_day service call (v2.7.0)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_required_date(call.data.get("date"))
+            note = str(call.data.get("note", "") or "")
+            updated = await coordinator.update_sick_day(day, note)
+            if not updated:
+                raise HomeAssistantError(
+                    f"{day.isoformat()} is not marked sick for {child_name} — mark it first, then edit"
+                )
+
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
@@ -304,6 +372,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, SERVICE_SET_FEDERAL_STATE, handle_set_federal_state, schema=SET_FEDERAL_STATE_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_MARK_SICK_DAY, handle_mark_sick_day, schema=MARK_SICK_DAY_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UNMARK_SICK_DAY, handle_unmark_sick_day, schema=UNMARK_SICK_DAY_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_MARK_SICK_RANGE, handle_mark_sick_range, schema=MARK_SICK_RANGE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_UPDATE_SICK_DAY, handle_update_sick_day, schema=UPDATE_SICK_DAY_SCHEMA)
         _LOGGER.info("School Schedule services registered")
 
     return True
@@ -330,7 +400,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(v, SchoolScheduleCoordinator)
         ]
         if not remaining:
-            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY]:
+            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY]:
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
 

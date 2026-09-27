@@ -115,6 +115,14 @@
     "unmark_sick_day": {
       "name": "Kranktag entfernen",
       "description": "Entfernt die Krank-Markierung für einen Tag. Ohne Datum gilt heute."
+    },
+    "mark_sick_range": {
+      "name": "Krankmeldung (Von–Bis)",
+      "description": "Markiert alle Tage von Start- bis Enddatum (inklusive) als krank. Beide Daten sind Pflicht."
+    },
+    "update_sick_day": {
+      "name": "Kranktag bearbeiten",
+      "description": "Aktualisiert die Notiz eines bestehenden Kranktags. Der Tag muss bereits als krank markiert sein."
     }
   }
 }

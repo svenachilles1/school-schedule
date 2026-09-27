@@ -43,6 +43,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from .const import (
+    ABSENCE_RANGE_MAX_DAYS,
     ABSENCE_RETENTION_DAYS,
     ABSENCE_TYPE_SICK,
     ATTEST_REQUIRED_FROM_STREAK,
@@ -345,6 +346,52 @@ def upsert_absence(
     new_list.append(entry)
     new_list.sort(key=lambda e: e["date"])
     return new_list, True
+
+
+def mark_sick_range(
+    absences: list[dict[str, Any]],
+    start: date,
+    end: date,
+    note: str = "",
+) -> tuple[list[dict[str, Any]], int, str | None]:
+    """Mark every day from ``start`` to ``end`` (inclusive) as sick (v2.7.0).
+
+    Returns ``(new_list, added_count, error)`` — the list is only modified
+    when ``error`` is None. Guards:
+    - start must be <= end (swapped dates are a user typo, not silently
+      fixed — the caller shows a clear error instead)
+    - range length is capped at ABSENCE_RANGE_MAX_DAYS
+    - the range is built atomically: when the guard trips, the input list
+      is returned untouched (no partial writes)
+    """
+    if start > end:
+        return absences, 0, "start_after_end"
+    if (end - start).days + 1 > ABSENCE_RANGE_MAX_DAYS:
+        return absences, 0, "range_too_long"
+    new_list = [dict(e) for e in absences]
+    changed = 0
+    current = start
+    while current <= end:
+        new_list, day_changed = upsert_absence(new_list, current, ABSENCE_TYPE_SICK, note)
+        if day_changed:
+            changed += 1
+        current += timedelta(days=1)
+    return new_list, changed, None
+
+
+def update_absence_note(
+    absences: list[dict[str, Any]],
+    day: date,
+    note: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Update ONLY the note of the absence entry for ``day`` (v2.7.0).
+
+    Date stays verbatim. Returns a new list and whether the note changed.
+    The date cannot be moved here — that is a remove+mark flow handled by
+    the caller (two atomic steps), never an in-place mutation.
+    """
+    new_list, marked = upsert_absence(absences, day, ABSENCE_TYPE_SICK, note)
+    return new_list, marked
 
 
 def remove_absence(
