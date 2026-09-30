@@ -248,6 +248,20 @@ class SchoolScheduleOptionsFlowHandler(config_entries.OptionsFlow):
                         self.hass, federal_state
                     )
                     coordinator.holidays.async_setup_with_entry(self.config_entry)
+                    # v2.7.1: same push discipline as the set_federal_state
+                    # service — a fresh state has no entry cache, so force
+                    # a fetch, persist it, and push to the sensors/cards
+                    # immediately. Without this the card kept showing the
+                    # old state (and an empty vacation list) until the
+                    # next 15-minute coordinator tick.
+                    await coordinator.holidays.async_ensure_current(force=True)
+                    if coordinator.holidays.dirty:
+                        coordinator.holidays.persist_into(self.config_entry)
+                        coordinator.holidays.dirty = False
+                        coordinator._refresh_entry_ref()
+                    coordinator.async_set_updated_data(
+                        coordinator._build_schedule_data()
+                    )
                 return self.async_create_entry(title="", data={})
 
         current = self.config_entry.data.get(CONF_FEDERAL_STATE, DEFAULT_FEDERAL_STATE)

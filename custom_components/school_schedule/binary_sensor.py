@@ -94,6 +94,13 @@ class SchoolFreeBinarySensor(SchoolScheduleEntity, BinarySensorEntity):
             "next_public_holiday",
             "holidays_count",
             "holidays_last_updated",
+            # v2.7.1: the card renders its holiday view + countdown from
+            # the backend data instead of a client-side API fetch —
+            # one data path, survives browser cache clears.
+            "vacations",
+            # v2.7.1: legacy migration marker — False = the state is the
+            # untouched default, the card may migrate a localStorage choice.
+            "federal_state_configured",
         ):
             if key in data:
                 attrs[key] = data[key]
