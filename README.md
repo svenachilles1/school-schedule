@@ -58,7 +58,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Color-coded lessons:** Each lesson has a custom color and icon
 - **Break/Pause rendering:** Breaks shown with dashed border, italic subject, coffee icon — no room/teacher displayed
 - **Break/Pause form:** Checkbox "Als Pause markieren" + "Auf alle Tage anwenden" in the inline add form. Room/teacher auto-disabled for breaks
-- **Holiday calendar:** German school holidays from mehr-schulferien.de — pick your federal state, see current/upcoming holidays with countdown (stored per browser)
+- **Holiday calendar:** German school holidays from mehr-schulferien.de — pick your federal state, see current/upcoming holidays with countdown. The state and data are stored **in the integration (per child)**, not in the browser — they survive HA/HACS updates, browser cache clears, app reinstalls and device switches (v2.7.1)
 - **Responsive auto-fill columns:** Days flow into the next row automatically on narrow cards — no scrolling
 - **Visual editor:** Set the card's height and width via the dashboard visual editor
 - **Hero section:** Currently running lesson (JETZT) and next lesson (ALS NÄCHSTES)

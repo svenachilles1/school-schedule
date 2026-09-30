@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_CHILD_NAME,
+    CONF_FEDERAL_STATE,
     CONF_IS_BREAK,
     CONF_LESSONS,
     CONF_WEEKDAY,
@@ -26,6 +27,7 @@ from .holiday_logic import (
     day_status,
     next_event,
     next_school_day,
+    vacations_for_card,
 )
 from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
 from .absence_logic import (
@@ -166,6 +168,15 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             "next_public_holiday": next_event(today_date, periods, event_type="holiday"),
             "holidays_count": len(periods),
             "holidays_last_updated": self.holidays.last_updated_at,
+            # v2.7.1: card holiday data from the BACKEND — one data path,
+            # always in sync with the school-free logic, survives browser
+            # cache clears (fixes "holiday settings lost after update").
+            "vacations": vacations_for_card(periods),
+            # v2.7.1: distinguishes "user explicitly configured a state"
+            # from "default thueringen never touched" — the card uses this
+            # to MIGRATE a legacy localStorage choice into the backend on
+            # first contact instead of overwriting it with the default.
+            "federal_state_configured": CONF_FEDERAL_STATE in self.entry.data,
             # Sick days / absences (v2.6.0)
             "sick_today": sick["sick_today"],
             "sick_tomorrow": sick["sick_tomorrow"],

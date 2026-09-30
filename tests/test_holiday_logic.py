@@ -26,6 +26,7 @@ from school_schedule.holiday_logic import (  # noqa: E402
     next_event,
     next_school_day,
     parse_periods,
+    vacations_for_card,
 )
 from school_schedule.const import (  # noqa: E402
     STATUS_PUBLIC_HOLIDAY,
@@ -183,6 +184,42 @@ def test_unparseable_dropped() -> None:
     ])
     assert all(p["name"] != "Junk" for p in periods)
     print("PASS: unparseable dates dropped")
+
+
+# ─── v2.7.1: vacations_for_card (card serialization) ─────────────────
+
+
+def test_vacations_for_card_filters_and_serializes():
+    """Card data must contain school vacations only, ISO dates, deduped+sorted."""
+    periods = parse_periods(RAW_PERIODS)
+    card = vacations_for_card(periods)
+    assert all(e["is_school_vacation"] for e in card)
+    assert all(not e.get("is_public_holiday", False) for e in card)
+    assert all(isinstance(e["starts_on"], str) and isinstance(e["ends_on"], str) for e in card)
+    assert [e["starts_on"] for e in card] == sorted(e["starts_on"] for e in card)
+    # no duplicates by (name, starts_on, ends_on)
+    keys = [(e["name"], e["starts_on"], e["ends_on"]) for e in card]
+    assert len(keys) == len(set(keys))
+    print("PASS: vacations_for_card filters+serializes")
+
+
+def test_vacations_for_card_excludes_public_holidays():
+    """Public holidays must never leak into the card's vacation list."""
+    periods = parse_periods(RAW_PERIODS)
+    card = vacations_for_card(periods)
+    assert not any("Einheit" in e["name"] for e in card)
+    print("PASS: public holidays excluded from card data")
+
+
+def test_vacations_for_card_empty():
+    """No vacations -> empty list (never None, never a crash)."""
+    assert vacations_for_card([]) == []
+    assert vacations_for_card(parse_periods([
+        {"name": "Tag der Deutschen Einheit", "starts_on": "2026-10-03",
+         "ends_on": "2026-10-03", "is_public_holiday": True,
+         "is_school_vacation": False},
+    ])) == []
+    print("PASS: empty vacation list handled")
 
 
 if __name__ == "__main__":

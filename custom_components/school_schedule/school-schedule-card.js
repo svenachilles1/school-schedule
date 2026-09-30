@@ -1,8 +1,10 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.0
+ * School Schedule Card — Ultra Premium v2.7.1
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
- *           Ferienkalender mit Zurueck-Button, Icon-Anzeige pro Stunde, Sprache DE/EN,
+ *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
+ *           Integration statt localStorage/Client-Fetch — ueberleben Updates/Cache-Clear),
+ *           Icon-Anzeige pro Stunde, Sprache DE/EN,
  *           Kinder-Umschalter (Multi-Child), Ferien-Countdown in der Hero-Sektion,
  *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss,
  *           eindeutige lesson_uid-Adressierung (Bugfix: falsches Fach im Bearbeiten-Formular),
@@ -46,7 +48,24 @@ class SchoolScheduleCard extends HTMLElement {
     this._holidayMode = false;
     this._holidayData = null;
     this._holidayLoading = false;
-    this._holidayState = localStorage.getItem("ssc_holiday_state") || "";
+    // v2.7.1: the backend is the single source of truth for the federal
+    // state. localStorage is only a boot hint until the first backend push
+    // arrives (set hass -> _updateData) and a fallback while the backend
+    // has no state configured at all.
+    this._holidayState = "";
+    this._holidayPickerOpen = false;  // user pressed "back" — keep picker open
+    // v2.7.1: while a set_federal_state service call is in flight the
+    // backend still pushes the OLD state — blindly syncing would flip
+    // the UI right back (race). Pending tracks the in-flight choice.
+    this._holidayPendingState = null;
+    this._holidayPendingAt = 0;
+    this._holidayPendingChild = "";
+    // v2.7.1: which federal state this._holidayData belongs to — stale
+    // data from a previous state is dropped on switch (see _updateData).
+    this._holidayDataState = "";
+    // v2.7.1: one-time legacy migration flag per child (localStorage-only
+    // installs push their stored choice into the backend on first contact)
+    this._holidayMigrateFired = {};
     this._holidayAutoFetched = false;
     this._availableChildren = [];
     this._cardLanguage = "";
@@ -272,6 +291,17 @@ class SchoolScheduleCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._resolveLanguage();
+    // v2.7.1: on the very first hass push, seed the holiday state from
+    // localStorage (boot hint) so the countdown can render before the
+    // first backend attribute arrives — but only while the backend has
+    // not delivered its state yet.
+    if (!this._hassSeeded) {
+      this._hassSeeded = true;
+      try {
+        const boot = localStorage.getItem("ssc_holiday_state");
+        if (boot && !this._holidayState) this._holidayState = boot;
+      } catch(e) { /* storage unavailable — backend state wins */ }
+    }
     this._updateData();
   }
 
@@ -301,6 +331,103 @@ class SchoolScheduleCard extends HTMLElement {
     }
     this._availableChildren = [...childSet].sort((a, b) => a.localeCompare(b, "de"));
     // Auto-load holiday data for the countdown (cache first, fetch once)
+    // v2.7.1: the backend binary_sensor carries federal_state AND the
+    // vacations list — the single source of truth. It heals any lost
+    // localStorage (browser cache clear, app reinstall, new device) and
+    // overrides the boot hint from set hass. localStorage is only written
+    // as a boot hint for the next page load, never read as authority.
+    const schulfreiEntity = this._findEntity("schulfrei");
+    const schulfreiAttr = schulfreiEntity ? (schulfreiEntity.attributes || {}) : {};
+    const backendState = schulfreiAttr.federal_state || "";
+    // v2.7.1: capture the legacy choice (boot hint from localStorage) BEFORE
+    // the backend sync below overwrites this._holidayState — the migration
+    // check later needs the original value, not the freshly synced one.
+    const legacyChoice = this._holidayState;
+    // v2.7.1 race guard: while a picker choice is in flight (service call
+    // sent, backend not yet updated) the backend still pushes the OLD
+    // state — syncing now would flip the UI back. The pending choice wins
+    // until the backend confirms it (state == pending) or the guard times
+    // out (backend never confirms -> fall back to backend truth).
+    const pending = this._holidayPendingState;
+    // Child switch cleared the pending phase — an in-flight choice for
+    // another child must never block this child's backend sync (the
+    // service addresses children by name; the pending flag is per-card).
+    const pendingStaleChild = pending && this._holidayPendingChild && this._holidayPendingChild !== childName;
+    const pendingTimedOut = pending && (Date.now() - this._holidayPendingAt > 15000);
+    if (pending && !pendingTimedOut && !pendingStaleChild && backendState && backendState !== pending) {
+      // in flight — do NOT overwrite the user's fresh choice
+    } else {
+      if (pending && (pendingTimedOut || pendingStaleChild || backendState === pending)) {
+        // confirmed, timed out or stale — either way the pending phase is over
+        this._holidayPendingState = null;
+      }
+      if (backendState && schulfreiAttr.federal_state_configured !== false) {
+        // v2.7.1: only sync a CONFIGURED backend state. configured === false
+        // means the attribute carries the default nobody ever chose —
+        // syncing it would silently show wrong holidays; the picker stays
+        // (or the legacy migration below pushes the stored choice).
+        if (this._holidayState !== backendState) {
+          this._holidayState = backendState;
+          this._holidayData = null;          // state changed -> invalidate cache
+          this._holidayAutoFetched = false;  // allow re-fetch for the new state
+        }
+        try { localStorage.setItem("ssc_holiday_state", backendState); } catch(e) {}
+      } else if (this._holidayState) {
+        // Legacy backend (pre-v2.7.1): keep whatever we have (boot hint or a
+        // state picked in this session) so the countdown keeps working.
+        try { localStorage.setItem("ssc_holiday_state", this._holidayState); } catch(e) {}
+      }
+    }
+    // v2.7.1 legacy migration: an installation that only ever used the old
+    // card-side picker (localStorage, backend never configured — the
+    // federal_state_configured attribute is missing/False) pushes its
+    // stored choice into the backend ONCE. Never fires when the backend
+    // was configured via options flow or service. ``legacyChoice`` holds
+    // the localStorage hint captured BEFORE the backend sync overwrote
+    // this._holidayState.
+    if (
+      backendState &&
+      schulfreiAttr.federal_state_configured === false &&
+      !this._holidayMigrateFired[this._childName] &&
+      legacyChoice
+    ) {
+      // Fires even when legacyChoice === the default: the user explicitly
+      // picked it in the old card era — persisting that intent is what
+      // makes the setting device-independent (the core of this fix).
+      this._holidayMigrateFired[this._childName] = true;
+      try {
+        this._hass.callService("school_schedule", "set_federal_state", {
+          child_name: this._childName,
+          federal_state: legacyChoice,
+        });
+      } catch(e) { /* migration is best-effort */ }
+    }
+    // v2.7.1: prefer the backend vacations attribute over the client-side
+    // API fetch — one data path, offline-safe, always in sync with the
+    // school-free logic. Fall back to the fetch only on legacy backends.
+    // ``_holidayDataState`` tracks WHICH state the cached data belongs
+    // to — after a state change the stale data is dropped even when the
+    // new backend push arrives with an empty list (fresh state, API
+    // fetch still in flight) so the countdown can never show the wrong
+    // state's vacations.
+    if (this._holidayDataState !== this._holidayState) {
+      this._holidayData = null;
+      this._holidayDataState = this._holidayState;
+      this._holidayAutoFetched = false;
+    }
+    // Gate: the vacations attribute belongs to ``backendState`` — only
+    // load it while we actually DISPLAY that state. On an unconfigured
+    // backend (default state nobody chose) with no local choice this
+    // stays empty -> hero shows "-" + picker instead of a default-state
+    // countdown the user never asked for.
+    if (Array.isArray(schulfreiAttr.vacations) && backendState === this._holidayState) {
+      const backendVacations = this._dedupePeriods(schulfreiAttr.vacations);
+      if (backendVacations.length > 0) {
+        this._holidayData = backendVacations;
+        this._holidayDataState = this._holidayState;
+        this._holidayLoading = false;
+      }
+    }
     if (this._holidayState && !this._holidayData && !this._holidayAutoFetched) {
       this._holidayAutoFetched = true;
       if (!this._loadHolidayCache(this._holidayState)) this._fetchHolidays(this._holidayState);
@@ -482,15 +609,39 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _selectHolidayState(stateSlug) {
+    // v2.7.1: persist the choice to the BACKEND (single source of truth)
+    // via the set_federal_state service — survives HA updates, HACS
+    // updates, browser cache clears, app reinstalls and device changes.
+    // localStorage is only a boot hint for the next page load.
     this._holidayState = stateSlug;
-    localStorage.setItem("ssc_holiday_state", stateSlug);
-    this._fetchHolidays(stateSlug);
+    this._holidayPickerOpen = false;
+    try { localStorage.setItem("ssc_holiday_state", stateSlug); } catch(e) {}
+    if (this._hass && this._childName) {
+      // Mark the choice in-flight so _updateData's backend sync does not
+      // flip the UI back to the old state before the service completes.
+      this._holidayPendingState = stateSlug;
+      this._holidayPendingAt = Date.now();
+      this._holidayPendingChild = this._childName;
+      try {
+        this._hass.callService("school_schedule", "set_federal_state", {
+          child_name: this._childName,
+          federal_state: stateSlug,
+        });
+      } catch(e) { /* service errors are non-fatal for the card UI */ }
+      this._holidayData = null;          // backend will push fresh data
+      this._holidayLoading = true;      // show spinner until it arrives
+      this._render();
+      return;
+    }
+    this._fetchHolidays(stateSlug);     // no hass (editor preview) — old path
   }
 
   _backToHolidayPicker() {
-    this._holidayState = "";
-    this._holidayData = null;
-    localStorage.removeItem("ssc_holiday_state");
+    // v2.7.1: "back" now only OPENS the picker — it must not wipe the
+    // configured state anymore (old behaviour: removeItem -> every
+    // reload showed the picker again = "settings lost after update").
+    // The backend keeps the state; _updateData re-syncs on the next push.
+    this._holidayPickerOpen = true;
     this._render();
   }
 
@@ -515,6 +666,7 @@ class SchoolScheduleCard extends HTMLElement {
       if (!Array.isArray(cache.data)) return false;
       // Dedupe auch beim Cache-Load (v2.4.2 konnte Duplikate in den Cache geschrieben haben)
       this._holidayData = this._dedupePeriods(cache.data);
+      this._holidayDataState = stateSlug;  // cache belongs to this state
       return true;
     } catch(e) { return false; }
   }
@@ -538,6 +690,7 @@ class SchoolScheduleCard extends HTMLElement {
     await fetchYear(year + 1);
     periods.sort((a, b) => String(a.starts_on).localeCompare(String(b.starts_on)));
     this._holidayData = this._dedupePeriods(periods);
+    this._holidayDataState = stateSlug;    // fetched data belongs to this state
     this._holidayLoading = false;
     try {
       localStorage.setItem("ssc_holiday_cache_" + stateSlug, JSON.stringify({
@@ -589,7 +742,10 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _renderHolidayView() {
-    if (!this._holidayState) {
+    // v2.7.1: the picker shows when NO backend state is configured OR the
+    // user explicitly pressed "back" to open it (_holidayPickerOpen).
+    // The state itself is never cleared anymore — the backend owns it.
+    if (!this._holidayState || this._holidayPickerOpen) {
       return this._renderHolidayPicker();
     }
     const stateName = this._getStateName(this._holidayState);

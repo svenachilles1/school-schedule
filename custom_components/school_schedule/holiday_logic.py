@@ -181,3 +181,45 @@ def next_event(
                     "ends_on": period["ends_on"].isoformat(),
                 }
     return None
+
+
+# ─── Card serialization (v2.7.1) ───────────────────────────────────────
+
+
+def vacations_for_card(periods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Serialize school vacations for the Lovelace card (v2.7.1).
+
+    The card renders its holiday view and countdown from this list instead
+    of fetching mehr-schulferien.de client-side — one data path that is
+    always in sync with what the backend uses for its school-free logic,
+    works offline, and survives browser cache clears (part of the
+    "settings lost after update" fix).
+
+    Takes PARSED periods (date objects, as held by the shared holiday
+    coordinator) and returns JSON-safe dicts with ISO date strings,
+    school vacations only, deduped and sorted by starts_on.
+    """
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for period in sorted(periods, key=lambda p: (p["starts_on"], p["ends_on"])):
+        if not period.get("is_school_vacation"):
+            continue
+        starts_on = period["starts_on"].isoformat()
+        ends_on = period["ends_on"].isoformat()
+        name = str(period["name"])
+        key = (name, starts_on, ends_on)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(
+            {
+                "name": name,
+                "starts_on": starts_on,
+                "ends_on": ends_on,
+                # The card's _dedupePeriods filters on this flag — keep it
+                # so both data paths (backend attribute, legacy client
+                # fetch) go through the identical normalisation.
+                "is_school_vacation": True,
+            }
+        )
+    return result
