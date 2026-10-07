@@ -61,6 +61,9 @@ jobs:
       - name: Unit tests (lesson logic)
         run: |
           python3 tests/test_lesson_logic.py
+      - name: Unit tests (cancellation logic)
+        run: |
+          python3 tests/test_cancellation_logic.py
       - name: Unit tests (break count)
         run: |
           python3 tests/test_count_real_lessons.py

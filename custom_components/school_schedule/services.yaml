@@ -354,6 +354,71 @@ update_sick_day:
       selector:
         text:
 
+mark_lesson_cancelled:
+  name: Stunde entfällt lassen
+  description: Markiert eine einzelne Stunde an einem konkreten Datum als entfallen (z.B. Lehrer krank, Ausflug, Vertretungsplan) — ohne den Wochenplan zu ändern.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: Datum des Schultags im Format JJJJ-MM-TT (kein Wochenende).
+      required: true
+      example: "2026-10-07"
+      selector:
+        text:
+    lesson_number:
+      name: Stundennummer
+      description: Nummer der ausfallenden Stunde (1-12), wie im Stundenplan.
+      required: true
+      example: 3
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    note:
+      name: Notiz
+      description: Optionaler Grund (z.B. "Lehrer krank", "Ausflug").
+      required: false
+      example: "Lehrer krank"
+      selector:
+        text:
+
+unmark_lesson_cancelled:
+  name: Ausfall aufheben
+  description: Hebt die Entfall-Markierung einer einzelnen Stunde auf — die Stunde findet wieder statt.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: Datum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-07"
+      selector:
+        text:
+    lesson_number:
+      name: Stundennummer
+      description: Nummer der Stunde (1-12).
+      required: true
+      example: 3
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+
 get_schedule:
   name: Stundenplan abrufen
   description: Ruft den Stundenplan für einen bestimmten Wochentag ab.

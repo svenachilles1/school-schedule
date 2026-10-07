@@ -39,7 +39,14 @@ from .absence_logic import (
     upsert_absence,
     remove_absence,
 )
-from .const import ABSENCE_TYPE_SICK
+from .cancellation_logic import (
+    annotate_lessons,
+    get_entry_cancellations,
+    prune_cancellations,
+    remove_cancellation,
+    upsert_cancellation,
+)
+from .const import ABSENCE_TYPE_SICK, CONF_LESSON_CANCELLATIONS
 from .holidays import (
     SharedHolidaysCoordinator,
     federal_state_from_entry,
@@ -76,6 +83,13 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         # in-place edit can never silently alias into the stored dict
         # (the v2.5.1/v2.5.2 persistence lesson, applied from day one).
         self.absences: list[dict[str, Any]] = get_entry_absences(dict(entry.data))
+        # v2.7.2: single-lesson cancellations (Einzelstunden-Ausfall).
+        # Same deep-copy discipline — self.cancellations must stay fully
+        # detached from entry.data (the v2.5.1/v2.5.2 persistence lesson,
+        # applied from day one).
+        self.cancellations: list[dict[str, Any]] = get_entry_cancellations(
+            dict(entry.data)
+        )
         # v2.5.7: backfill deterministic lesson uids for legacy
         # entries so the card can address every lesson uniquely.
         ensure_lesson_uids(self.lessons)
@@ -110,6 +124,7 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             self.lessons = copy.deepcopy(updated.data.get(CONF_LESSONS, []))
             ensure_lesson_uids(self.lessons)
             self.absences = get_entry_absences(dict(updated.data))
+            self.cancellations = get_entry_cancellations(dict(updated.data))
 
         # v2.6.0: prune absence entries older than the retention window.
         # Runs on every coordinator refresh (15 min) so entry.data cannot
@@ -119,6 +134,12 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         if changed:
             self.absences = pruned
             await self._persist_absences()
+
+        # v2.7.2: same retention pruning for lesson cancellations.
+        pruned_c, changed_c = prune_cancellations(self.cancellations, today)
+        if changed_c:
+            self.cancellations = pruned_c
+            await self._persist_cancellations()
 
         # Refresh holiday data if stale (at most one API request per 24h
         # per federal state — shared between all children in that state).
@@ -145,15 +166,28 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         today_h = day_status(today_date, periods)
         tomorrow_h = day_status(tomorrow_date, periods)
 
+        # v2.7.2: single-lesson cancellations. Concrete-date semantics:
+        # - today/tomorrow lessons are annotated with THAT date's cancels
+        # - each weekday sensor shows the NEXT occurrence of its weekday
+        #   (today counts — a Tuesday sensor on a Tuesday shows today),
+        #   annotated with exactly that date's cancellations. The card
+        #   uses the *_date metadata to address its cancel service calls,
+        #   so backend and card can never disagree about the target day.
+        next_dates = {
+            day: self._next_date_for_weekday(day, today_date) for day in WEEKDAYS
+        }
+
         # v2.6.0: complete sick-day picture (streak, attest thresholds).
         sick = sick_summary(self.absences, today_date, periods)
 
         data: dict[str, Any] = {
             "child_name": self.child_name,
-            "today": self._get_lessons_for_day(today_weekday),
-            "tomorrow": self._get_lessons_for_day(tomorrow_weekday),
+            "today": self._get_annotated_lessons_for_date(today_date, today_weekday),
+            "tomorrow": self._get_annotated_lessons_for_date(tomorrow_date, tomorrow_weekday),
             "today_weekday": today_weekday,
             "tomorrow_weekday": tomorrow_weekday,
+            "today_date": today_date.isoformat(),
+            "tomorrow_date": tomorrow_date.isoformat(),
             "last_update": today.isoformat(),
             # Holiday / school-free data (v2.5.0)
             "federal_state": self.holidays.federal_state,
@@ -196,10 +230,32 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
                 if e.get("type") == ABSENCE_TYPE_SICK
             ],
             "absence_count": sum(1 for e in self.absences if e.get("type") == ABSENCE_TYPE_SICK),
+            # v2.7.2: lesson cancellations for the card and automations.
+            # cancelled_today/cancelled_tomorrow give the per-day lists;
+            # upcoming_cancellations feeds the modal list in the card.
+            "cancelled_today": [
+                {"lesson_number": e["lesson_number"], "note": str(e.get("note") or "")}
+                for e in self.cancellations
+                if e.get("date") == today_date.isoformat()
+            ],
+            "cancelled_tomorrow": [
+                {"lesson_number": e["lesson_number"], "note": str(e.get("note") or "")}
+                for e in self.cancellations
+                if e.get("date") == tomorrow_date.isoformat()
+            ],
+            "upcoming_cancellations": [
+                {"date": e["date"], "lesson_number": e["lesson_number"], "note": str(e.get("note") or "")}
+                for e in self.cancellations
+                if e.get("date", "") >= today_date.isoformat()
+            ],
         }
 
         for day in WEEKDAYS:
-            data[day] = self._get_lessons_for_day(day)
+            day_date = next_dates[day]
+            data[day] = annotate_lessons(
+                self._get_lessons_for_day(day), self.cancellations, day_date
+            )
+            data[f"{day}_date"] = day_date.isoformat()
 
         _LOGGER.debug("Built schedule: today=%d, monday=%d, total_lessons=%d", len(data["today"]), len(data.get("monday", [])), len(self.lessons))
         return data
@@ -214,6 +270,26 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             if lesson.get(CONF_WEEKDAY) == weekday
         ]
         return sorted(day_lessons, key=lambda l: l.get(CONF_LESSON_NUMBER, 0))
+
+    def _next_date_for_weekday(self, weekday: str, today: date) -> date:
+        """The concrete date a weekday sensor currently stands for (v2.7.2).
+
+        Today counts: on a Tuesday the tuesday sensor shows today's plan,
+        from Wednesday on it shows next week's Tuesday. Used to apply
+        date-exact cancellations to the weekday sensors.
+        """
+        target = WEEKDAYS.index(weekday)  # 0=Mon..4=Fri
+        offset = (target - today.weekday()) % 7
+        return today + timedelta(days=offset)
+
+    def _get_annotated_lessons_for_date(
+        self, day: date, weekday: str | None
+    ) -> list[dict[str, Any]]:
+        """Lessons for a concrete date, annotated with that date's
+        cancellations (v2.7.2)."""
+        return annotate_lessons(
+            self._get_lessons_for_day(weekday), self.cancellations, day
+        )
 
     async def add_lesson(self, lesson: dict[str, Any]) -> bool:
         """Add a new lesson to the schedule.
@@ -473,4 +549,64 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self._refresh_entry_ref()
         _LOGGER.debug(
             "Persisted %d absences for %s", len(self.absences), self.child_name
+        )
+
+    # ─── Lesson cancellations (v2.7.2) ─────────────────────────────────
+
+    async def mark_lesson_cancelled(
+        self, day: date, lesson_number: int, note: str = ""
+    ) -> bool:
+        """Mark a single lesson occurrence as cancelled (v2.7.2).
+
+        Idempotent: re-marking only updates the note. The weekly plan is
+        never touched — the cancellation lives on its concrete date.
+        """
+        new_cancellations, changed = upsert_cancellation(
+            self.cancellations, day, lesson_number, note
+        )
+        if not changed:
+            _LOGGER.debug(
+                "mark_lesson_cancelled: %s #%s for %s unchanged (already cancelled, same note)",
+                day.isoformat(), lesson_number, self.child_name,
+            )
+            return True
+        self.cancellations = new_cancellations
+        await self._persist_cancellations()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "mark_lesson_cancelled: %s #%s cancelled for %s (note=%r, total cancellations now %d)",
+            day.isoformat(), lesson_number, self.child_name, note,
+            len(self.cancellations),
+        )
+        return True
+
+    async def unmark_lesson_cancelled(
+        self, day: date, lesson_number: int
+    ) -> bool:
+        """Remove a lesson cancellation. Returns False when there was none."""
+        new_cancellations, removed = remove_cancellation(
+            self.cancellations, day, lesson_number
+        )
+        if not removed:
+            return False
+        self.cancellations = new_cancellations
+        await self._persist_cancellations()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "unmark_lesson_cancelled: %s #%s restored for %s",
+            day.isoformat(), lesson_number, self.child_name,
+        )
+        return True
+
+    async def _persist_cancellations(self) -> None:
+        """Persist cancellations to the config entry data (same discipline)."""
+        new_data = {
+            **self.entry.data,
+            CONF_LESSON_CANCELLATIONS: copy.deepcopy(self.cancellations),
+        }
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self._refresh_entry_ref()
+        _LOGGER.debug(
+            "Persisted %d cancellations for %s",
+            len(self.cancellations), self.child_name,
         )

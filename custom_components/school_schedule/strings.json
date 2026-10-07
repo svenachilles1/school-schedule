@@ -123,6 +123,14 @@
     "update_sick_day": {
       "name": "Kranktag bearbeiten",
       "description": "Aktualisiert die Notiz eines bestehenden Kranktags. Der Tag muss bereits als krank markiert sein."
+    },
+    "mark_lesson_cancelled": {
+      "name": "Stunde entfällt lassen",
+      "description": "Markiert eine einzelne Stunde an einem konkreten Datum als entfallen (Lehrer krank, Ausflug, Vertretungsplan) — ohne den Wochenplan zu ändern."
+    },
+    "unmark_lesson_cancelled": {
+      "name": "Ausfall aufheben",
+      "description": "Hebt die Entfall-Markierung einer einzelnen Stunde auf — die Stunde findet wieder statt."
     }
   }
 }

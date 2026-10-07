@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.1
+ * School Schedule Card — Ultra Premium v2.7.2
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -9,7 +9,9 @@
  *           Tages-Fortschrittsbalken mit Sternen-Gamification + Konfetti bei Schulschluss,
  *           eindeutige lesson_uid-Adressierung (Bugfix: falsches Fach im Bearbeiten-Formular),
  *           Fehltage-Tracking (v2.6.0): Krank-Pill im Hero, Krank-Modal mit Heute/Morgen-Button,
- *           Attest-Warnbanner (ab 3. Kranktagen Attestpflicht), Notizen + Historie
+ *           Attest-Warnbanner (ab 3. Kranktagen Attestpflicht), Notizen + Historie,
+ *           Einzelstunden-Ausfall (v2.7.2): entfallene Stunden durchgestrichen in Warnfarbe,
+ *           EINFÄLLT-Badge + Grund, Ausfall-Dialog im Bearbeiten-Modus, Cancel-Liste im Modal
  */
 
 const HOLIDAY_STATES = [
@@ -83,6 +85,9 @@ class SchoolScheduleCard extends HTMLElement {
     this._sickEdit = null;         // ISO date of the entry being edited
     this._sickDelete = null;      // ISO date pending delete confirmation
     this._sickRange = false;      // range form visible
+    // v2.7.2: lesson cancellation dialog state (edit mode)
+    this._cancelLesson = null;   // {weekday, lesson_number, lesson_uid, subject, date_iso}
+    this._cancellations = [];    // upcoming cancellations from the absence sensor
   }
 
   static get STRINGS() {
@@ -161,6 +166,16 @@ class SchoolScheduleCard extends HTMLElement {
       sick_range_btn: "Krank von–bis markieren",
       sick_today_badge: "heute",
       sick_planned_badge: "geplant",
+        cancelled_badge: "ENTF\u00c4LLT",
+        cancelled_lesson: "Stunde entf\u00e4llt",
+        cancel_lesson_q: "Stunde entfallen lassen?",
+        cancel_lesson_sub: "Die Stunde wird f\u00fcr dieses Datum als entfallen markiert \u2014 der Wochenplan bleibt unver\u00e4ndert.",
+        cancel_btn: "Entf\u00e4llt lassen",
+        uncancel_btn: "Stunde findet statt",
+        cancelled_list_title: "AUSFALL",
+        cancelled_list_empty: "Kein Stunden-Ausfall erfasst",
+        cancel_note: "Grund (optional)",
+        cancel_note_ph: "z.B. Lehrer krank",
         attest_warning_text: "Ab dem 3. Kranktag ist ein \u00e4rztliches Attest n\u00f6tig \u2014 bei weiterer Krankheit morgen mitbringen!",
         attest_required_text: "Attestpflicht: Ab dem 3. Kranktag in Folge wird ein \u00e4rztliches Attest ben\u00f6tigt!",
         sick_day: "Tag",
@@ -241,6 +256,16 @@ class SchoolScheduleCard extends HTMLElement {
       sick_range_btn: "Mark sick from–to",
       sick_today_badge: "today",
       sick_planned_badge: "planned",
+        cancelled_badge: "CANCELLED",
+        cancelled_lesson: "Lesson cancelled",
+        cancel_lesson_q: "Cancel this lesson?",
+        cancel_lesson_sub: "Marks this lesson as cancelled for this date only \u2014 the weekly schedule stays unchanged.",
+        cancel_btn: "Mark as cancelled",
+        uncancel_btn: "Lesson takes place",
+        cancelled_list_title: "CANCELLATIONS",
+        cancelled_list_empty: "No cancelled lessons recorded",
+        cancel_note: "Reason (optional)",
+        cancel_note_ph: "e.g. teacher sick",
         attest_warning_text: "From the 3rd sick day a doctor's note is required — bring one tomorrow if still sick!",
         attest_required_text: "Doctor's note required: from the 3rd consecutive sick day a medical certificate is needed!",
         sick_day: "day",
@@ -474,9 +499,25 @@ class SchoolScheduleCard extends HTMLElement {
       entries: Array.isArray(sAttr.sick_entries) ? sAttr.sick_entries : [],
       isoToday: this._isoDate("today"),
     };
+    // v2.7.2: lesson cancellations (Einzelstunden-Ausfall) from the
+    // absence sensor attributes — backend single source of truth.
+    this._cancellations = Array.isArray(sAttr.upcoming_cancellations)
+      ? sAttr.upcoming_cancellations : [];
+    // Per-day concrete dates: the backend annotates each weekday sensor's
+    // lessons with the cancellations for EXACTLY the date that sensor
+    // stands for (next occurrence, today counts). We read the date from
+    // each day entity's schedule_date attribute so cancel service calls
+    // always address the same date the user sees.
+    for (const [day, info] of Object.entries(dayMap)) {
+      const st = this._findEntity(info.sensor);
+      if (st && st.attributes && st.attributes.schedule_date) {
+        this._dayDates = this._dayDates || {};
+        this._dayDates[day] = st.attributes.schedule_date;
+      }
+    }
     const todayJs = new Date().getDay();
     this._todayKey = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][todayJs];
-    if (!this._showForm && !this._confirmDelete && !this._sickModal) {
+    if (!this._showForm && !this._confirmDelete && !this._sickModal && !this._cancelLesson) {
       this._render();
     }
   }
@@ -547,6 +588,14 @@ class SchoolScheduleCard extends HTMLElement {
       case "sick-range-toggle": this._sickRange = !this._sickRange; this._render(); break;
       case "sick-range-cancel": this._sickRange = false; this._render(); break;
       case "sick-range-save": this._sickSaveRange(); break;
+      // v2.7.2: lesson cancellation dialog (edit mode)
+      case "cancel-lesson": this._openCancelDialog(actionEl.dataset.weekday, actionEl.dataset.number, actionEl.dataset.uid); break;
+      case "cancel-lesson-confirm": this._confirmCancelLesson(); break;
+      case "cancel-lesson-cancel": this._cancelLesson = null; this._render(); break;
+      case "cancel-lesson-bg":
+        if (!e.target.closest(".ssc-cancel-card")) { this._cancelLesson = null; this._render(); }
+        break;
+      case "uncancel-lesson": this._uncancelLesson(e.target.closest("[data-date]").getAttribute("data-date"), parseInt(e.target.closest("[data-number]").getAttribute("data-number"), 10)); break;
     }
   }
 
@@ -948,6 +997,73 @@ class SchoolScheduleCard extends HTMLElement {
 
   // === Form Logic ===
 
+  // === v2.7.2: lesson cancellation (Einzelstunden-Ausfall) ===
+
+  _dateForDay(day) {
+    // The concrete date a weekday column currently stands for.
+    // Priority: backend schedule_date attribute (always exact) > local
+    // fallback computation (identical formula to the backend's
+    // _next_date_for_weekday) > empty (dialog refuses without date).
+    if (this._dayDates && this._dayDates[day]) return this._dayDates[day];
+    if (!this._todayKey) return "";
+    const idx = ["monday","tuesday","wednesday","thursday","friday"].indexOf(day);
+    if (idx < 0) return "";
+    const today = new Date();
+    const todayIdx = (today.getDay() + 6) % 7;  // Mon=0..Sun=6
+    const offset = (idx - todayIdx + 7) % 7;
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+    const pad = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  _openCancelDialog(weekday, lessonNumber, lessonUid) {
+    const lesson = this._findLesson(weekday, lessonNumber, lessonUid);
+    if (!lesson) return;
+    const dateIso = this._dateForDay(weekday);
+    if (!dateIso) return;
+    const isCancelled = lesson.cancelled === true;
+    this._cancelLesson = {
+      weekday: weekday,
+      lesson_number: parseInt(lessonNumber, 10),
+      lesson_uid: lessonUid || "",
+      subject: lesson.subject || "",
+      start_time: (lesson.start_time || "").slice(0, 5),
+      end_time: (lesson.end_time || "").slice(0, 5),
+      date_iso: dateIso,
+      already_cancelled: isCancelled,
+      note: lesson.cancelled_note || "",
+    };
+    this._showForm = false;
+    this._confirmDelete = null;
+    this._render();
+  }
+
+  _confirmCancelLesson() {
+    const cd = this._cancelLesson;
+    if (!cd) return;
+    const noteInput = this._shadow.querySelector("#ssc-cancel-note");
+    const note = noteInput ? String(noteInput.value || "").trim() : "";
+    this._hass.callService("school_schedule", "mark_lesson_cancelled", {
+      child_name: this._childName,
+      date: cd.date_iso,
+      lesson_number: cd.lesson_number,
+      note: note,
+    });
+    this._cancelLesson = null;
+    this._render();
+  }
+
+  _uncancelLesson(dateIso, lessonNumber) {
+    if (!dateIso || !lessonNumber) return;
+    this._hass.callService("school_schedule", "unmark_lesson_cancelled", {
+      child_name: this._childName,
+      date: dateIso,
+      lesson_number: lessonNumber,
+    });
+    this._cancelLesson = null;
+    this._render();
+  }
+
   _openAddForm(weekday) {
     if (!weekday || weekday === "saturday" || weekday === "sunday") {
       weekday = "monday";
@@ -1196,7 +1312,10 @@ class SchoolScheduleCard extends HTMLElement {
       if (p.length < 2 || isNaN(p[0]) || isNaN(p[1])) return null;
       return p[0] * 60 + p[1] + (p.length > 2 && !isNaN(p[2]) ? p[2] / 60 : 0);
     };
-    const real = lessons.filter((l) => l.is_break !== true);
+    // v2.7.2: cancelled lessons are excluded from the progress entirely —
+    // they neither count as done nor inflate the total (the child is not
+    // sitting in them, so they are not part of the day's work)
+    const real = lessons.filter((l) => l.is_break !== true && l.cancelled !== true);
     const total = real.length;
     let done = 0;
     for (const l of real) {
@@ -1299,7 +1418,7 @@ class SchoolScheduleCard extends HTMLElement {
     let heroHtml = "";
     if (this._today) {
       let heroPills = "";
-      const realToday = (this._today.lessons || []).filter((l) => l.is_break !== true).length;
+      const realToday = (this._today.lessons || []).filter((l) => l.is_break !== true && l.cancelled !== true).length;
       const totalToday = realToday;
       const heroGrad = currentLesson
         ? this._getColor(currentLesson)
@@ -1386,6 +1505,7 @@ class SchoolScheduleCard extends HTMLElement {
     const formHtml = this._renderForm();
     const confirmHtml = this._renderConfirmDelete();
     const sickModalHtml = this._renderSickModal();
+    const cancelDialogHtml = this._renderCancelDialog();
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
     const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
@@ -1416,6 +1536,7 @@ class SchoolScheduleCard extends HTMLElement {
         formHtml +
         confirmHtml +
         sickModalHtml +
+        cancelDialogHtml +
       '</ha-card>';
 
     if (this._today && this._progress) {
@@ -1429,7 +1550,10 @@ class SchoolScheduleCard extends HTMLElement {
 
   _renderLessonCard(lesson, isCurrent, isToday, day) {
     const isBreak = lesson.is_break === true;
-    const color = isBreak ? (lesson.color || "#7a8a99") : this._getColor(lesson);
+    // v2.7.2: cancelled lessons render in warning red, struck through —
+    // same premium design language, unmistakably "entfällt".
+    const isCancelled = lesson.cancelled === true;
+    const color = isCancelled ? "#ff7043" : (isBreak ? (lesson.color || "#7a8a99") : this._getColor(lesson));
     const isDark = this._luminance(color) < 0.5;
     const textColor = isDark ? "#fff" : "#1a1a2e";
     const c10 = this._rgba(color, 0.1);
@@ -1443,6 +1567,7 @@ class SchoolScheduleCard extends HTMLElement {
     let cls = "lc";
     if (isCurrent) cls += " lc-now";
     if (isBreak) cls += " lc-break";
+    if (isCancelled) cls += " lc-cancelled";
 
     let details = "";
     if (!isBreak) {
@@ -1462,7 +1587,14 @@ class SchoolScheduleCard extends HTMLElement {
     let editBtns = "";
     if (this._editMode) {
       const lessonUid = lesson.lesson_uid || "";
+      // v2.7.2: cancel toggle button — calendar-close icon; filled when
+      // the lesson is already cancelled for this date
+      const cancelIcon = isCancelled ? "mdi:calendar-remove" : "mdi:calendar-remove-outline";
+      const cancelBtn = '<button class="lc-edit-btn' + (isCancelled ? " lc-cancel-btn-active" : "") + '" data-action="cancel-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" data-uid="' + lessonUid + '" title="' + this._t(isCancelled ? "uncancel_btn" : "cancel_btn") + '">' +
+          '<ha-icon icon="' + cancelIcon + '"></ha-icon>' +
+        '</button>';
       editBtns = '<div class="lc-edit">' +
+        cancelBtn +
         '<button class="lc-edit-btn" data-action="edit-lesson" data-weekday="' + day + '" data-number="' + lessonNum + '" data-uid="' + lessonUid + '" title="' + this._t("edit") + '">' +
           '<ha-icon icon="mdi:pencil"></ha-icon>' +
         '</button>' +
@@ -1472,14 +1604,21 @@ class SchoolScheduleCard extends HTMLElement {
       '</div>';
     }
 
+    const cancelledBadgeHtml = isCancelled
+      ? '<span class="lc-cancelled-badge">' + this._t("cancelled_badge") + '</span>' : "";
+    const cancelledNoteHtml = (isCancelled && lesson.cancelled_note)
+      ? '<div class="lc-cancelled-note">' + this._escHtml(lesson.cancelled_note) + '</div>' : "";
+
     return '<div class="' + cls + '" style="--c:' + color + ';--c05:' + c05 + ';--c10:' + c10 + ';--c20:' + c20 + ';--c30:' + c30 + ';--ctext:' + textColor + '">' +
       '<div class="lc-rail"></div>' +
       '<div class="lc-content">' +
         '<div class="lc-num">' + numHtml + '</div>' +
         '<div class="lc-info">' +
-          '<div class="lc-subject">' + lesson.subject + '</div>' +
+          '<div class="lc-subject">' + (isCancelled ? "<s>" + lesson.subject + "</s>" : lesson.subject) + '</div>' +
           '<div class="lc-time">' + (lesson.start_time || "").slice(0,5) + " - " + (lesson.end_time || "").slice(0,5) + '</div>' +
           (details ? '<div class="lc-details">' + details + '</div>' : "") +
+          (cancelledBadgeHtml ? '<div class="lc-cancelled-row">' + cancelledBadgeHtml + '</div>' : "") +
+          cancelledNoteHtml +
         '</div>' +
       '</div>' +
       editBtns +
@@ -1498,7 +1637,7 @@ class SchoolScheduleCard extends HTMLElement {
     for (const day of dayOrder) {
       const dd = this._days[day] || { lessons: [], label: day.slice(0,2), full: day };
       const isToday = day === this._todayKey;
-      const count = (dd.lessons || []).filter((l) => l.is_break !== true).length;
+      const count = (dd.lessons || []).filter((l) => l.is_break !== true && l.cancelled !== true).length;
 
       let dayClass = "day";
       if (isToday) dayClass += " day-active";
@@ -1537,7 +1676,7 @@ class SchoolScheduleCard extends HTMLElement {
     const todayFull = dayFullNames[this._todayKey] || this._t("today");
 
     const lessons = this._today ? this._today.lessons : [];
-    const count = lessons.filter((l) => l.is_break !== true).length;
+    const count = lessons.filter((l) => l.is_break !== true && l.cancelled !== true).length;
     const day = this._todayKey;
 
     let headerHtml = '<div class="day-header dh-active">' +
@@ -1562,6 +1701,56 @@ class SchoolScheduleCard extends HTMLElement {
     bodyHtml += '</div>';
 
     return '<div class="grid day-view"><div class="day day-active">' + headerHtml + bodyHtml + '</div></div>';
+  }
+
+  // v2.7.2: lesson cancellation dialog (edit mode)
+  _renderCancelDialog() {
+    if (!this._cancelLesson || !this._editMode) return "";
+    const cd = this._cancelLesson;
+    const already = cd.already_cancelled === true;
+    const dayFullNames = this._t("day_full");
+    const dayName = dayFullNames[cd.weekday] || cd.weekday;
+
+    let bodyHtml = "";
+    if (already) {
+      // already cancelled for this date -> offer the restore action
+      bodyHtml = '<div class="ssc-cancel-note">' +
+          this._t("cancelled_lesson") + " \u2014 " + dayName + ", " + cd.date_iso +
+        '</div>' +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="cancel-lesson-cancel">' + this._t("cancel") + '</button>' +
+          '<button class="ssc-btn ssc-btn-restore" data-action="uncancel-lesson" data-date="' + cd.date_iso + '" data-number="' + cd.lesson_number + '">' +
+            '<ha-icon icon="mdi:calendar-check" style="--mdc-icon-size:16px"></ha-icon>' +
+            '<span>' + this._t("uncancel_btn") + '</span>' +
+          '</button>' +
+        '</div>';
+    } else {
+      bodyHtml = '<div class="ssc-cancel-note">' +
+          this._t("cancel_lesson_sub") +
+        '</div>' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("cancel_note") + '</span>' +
+          '<input class="ssc-input" type="text" id="ssc-cancel-note" placeholder="' + this._escAttr(this._t("cancel_note_ph")) + '" value="' + this._escAttr(cd.note || "") + '" />' +
+        '</div>' +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="cancel-lesson-cancel">' + this._t("cancel") + '</button>' +
+          '<button class="ssc-btn ssc-btn-danger" data-action="cancel-lesson-confirm">' +
+            '<ha-icon icon="mdi:calendar-remove" style="--mdc-icon-size:16px"></ha-icon>' +
+            '<span>' + this._t("cancel_btn") + '</span>' +
+          '</button>' +
+        '</div>';
+    }
+
+    return '<div class="ssc-modal-overlay" data-action="cancel-lesson-bg">' +
+      '<div class="ssc-form-card ssc-cancel-card">' +
+        '<div class="ssc-form-title">' + this._t("cancel_lesson_q") + '</div>' +
+        '<div class="ssc-form-day">' +
+          (cd.subject ? cd.subject + " \u00b7 " : "") + dayName + ", " + cd.date_iso + " \u00b7 " +
+          this._t("lesson_short") + " " + cd.lesson_number + " \u00b7 " + cd.start_time + "-" + cd.end_time +
+        '</div>' +
+        bodyHtml +
+      '</div>' +
+    '</div>';
   }
 
   _renderForm() {
@@ -1812,11 +2001,44 @@ class SchoolScheduleCard extends HTMLElement {
         '</button>' +
         rangeHtml +
         listHtml +
+        this._renderCancelledList() +
         '<div class="ssc-form-buttons">' +
           '<button class="ssc-btn" data-action="cancel-sick">' + this._t("cancel") + '</button>' +
         '</div>' +
       '</div>' +
     '</div>';
+  }
+
+  // v2.7.2: upcoming lesson cancellations list (shown in the sick modal)
+  _renderCancelledList() {
+    const cancels = Array.isArray(this._cancellations) ? this._cancellations : [];
+    const todayIso = this._sick ? this._sick.isoToday : "";
+    if (cancels.length === 0) return "";
+    const itemsHtml = cancels.map(function(entry) {
+      const d = entry.date || "";
+      const num = parseInt(entry.lesson_number, 10);
+      const note = entry.note || "";
+      const badge = d === todayIso
+        ? '<span class="sick-entry-badge sick-entry-badge-today">' + this._t("sick_today_badge") + '</span>'
+        : (d > todayIso
+          ? '<span class="sick-entry-badge sick-entry-badge-planned">' + this._t("sick_planned_badge") + '</span>'
+          : "");
+      return '<div class="sick-entry ssc-cancel-entry" data-date="' + d + '" data-number="' + num + '">' +
+        '<div class="sick-entry-main">' +
+          '<span class="sick-entry-date">' + d + '</span>' +
+          '<span class="ssc-cancel-num">' + this._t("lesson_short") + " " + num + '</span>' +
+          badge +
+          (note ? '<span class="sick-entry-note">' + this._escHtml(note) + '</span>' : "") +
+        '</div>' +
+        '<div class="sick-entry-actions">' +
+          '<button class="sick-icon-btn sick-icon-btn-danger" data-action="uncancel-lesson" data-date="' + d + '" data-number="' + num + '" title="' + this._t("uncancel_btn") + '">' +
+            '<ha-icon icon="mdi:calendar-check" style="--mdc-icon-size:14px"></ha-icon>' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    }.bind(this)).join("");
+    return '<div class="sick-history-title">' + this._t("cancelled_list_title") + '</div>' +
+      '<div class="sick-entry-list">' + itemsHtml + '</div>';
   }
 
   // v2.7.0: escape helpers for user notes in HTML attributes / text
@@ -2446,6 +2668,58 @@ _getSickHistory() {
       .lc-break .lc-rail {
         opacity: 0.4;
       }
+      /* v2.7.2: cancelled lessons (Einzelstunden-Ausfall) */
+      .lc-cancelled {
+        border-style: dashed !important;
+        opacity: 0.72;
+        background: color-mix(in srgb, #ff7043 6%, transparent) !important;
+      }
+      .lc-cancelled .lc-subject {
+        text-decoration: line-through;
+        text-decoration-thickness: 2px;
+        text-decoration-color: #ff7043;
+        opacity: 0.85;
+      }
+      .lc-cancelled .lc-num,
+      .lc-cancelled .lc-time,
+      .lc-cancelled .lc-rail {
+        opacity: 0.55;
+      }
+      .lc-cancelled-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: #fff;
+        background: linear-gradient(135deg, #ff7043, #f4511e);
+        box-shadow: 0 2px 8px rgba(255, 112, 67, 0.35);
+      }
+      .lc-cancelled-row {
+        margin-top: 4px;
+      }
+      .lc-cancelled-note {
+        margin-top: 3px;
+        font-size: 10px;
+        color: rgba(255, 138, 101, 0.95);
+        font-style: italic;
+      }
+      .lc-cancel-btn-active {
+        color: #ff7043 !important;
+        border-color: rgba(255, 112, 67, 0.5) !important;
+      }
+      .ssc-cancel-entry .ssc-cancel-num {
+        font-weight: 700;
+        font-size: 11px;
+        color: var(--secondary-text-color, #aaa);
+      }
+      .ssc-btn-restore {
+        border-color: rgba(105, 240, 174, 0.4) !important;
+      }
+      .ssc-btn-danger {
+        border-color: rgba(255, 112, 67, 0.5) !important;
+      }
       @keyframes lc-glow {
         0%, 100% { box-shadow: 0 0 14px var(--c20, transparent); }
         50% { box-shadow: 0 0 28px var(--c30, transparent), 0 0 8px var(--c, transparent); }
@@ -2848,6 +3122,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.7.0",
+  description: "Stundenplan-Karte Ultra Premium v2.7.2",
   preview: false,
 });

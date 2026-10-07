@@ -22,6 +22,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Calendar entity (v2.5.4):** Real HA calendar per child — lessons as events, school-free days skipped
 - **Sick-day tracking (v2.6.0):** `sensor.stundenplan_<child>_fehlzeiten` per child with `mark_sick_day`/`unmark_sick_day` services (any date — retroactive and pre-marking, with notes), attest rule (doctor's note from the 3rd consecutive sick day, warning at day 2), sick-day pill + modal in the card, attest banner
 - **Sick-day manager (v2.7.0):** editable sick-day list (edit notes, delete entries) + Von–Bis range marking via `mark_sick_range`, `update_sick_day` service
+- **Single-lesson cancellations (v2.7.2):** `mark_lesson_cancelled` / `unmark_lesson_cancelled` — call off an individual lesson for a concrete date (Vertretungsplan-Light) without touching the weekly plan; struck-through rendering with ENTFÄLLT badge + reason, counters/JETZT/NÄCHSTES/progress/calendar skip cancelled lessons
 
 ## Installation
 

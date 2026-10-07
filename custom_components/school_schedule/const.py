@@ -184,6 +184,21 @@ SICK_STREAK_BREAK_GAP: Final[int] = 3
 # history for the yearly counter.
 ABSENCE_RETENTION_DAYS: Final[int] = 365
 
+# ─── Lesson cancellations / Einzelstunden-Ausfall (v2.7.2) ───────────
+CONF_LESSON_CANCELLATIONS: Final[str] = "lesson_cancellations"
+
+# Service names (cancellations) — Vertretungsplan-Light: a single lesson
+# on a concrete date is marked "entfällt" (teacher sick, trip, substitute
+# timetable) without touching the weekly plan itself.
+SERVICE_MARK_LESSON_CANCELLED: Final[str] = "mark_lesson_cancelled"
+SERVICE_UNMARK_LESSON_CANCELLED: Final[str] = "unmark_lesson_cancelled"
+
+# Cancellation entries older than N days (relative to their date) are
+# pruned on coordinator refresh — a cancelled lesson is only relevant
+# for its own date; 60 days of history is plenty for "was fiel letzte
+# Woche aus" while keeping entry.data small.
+CANCELLATION_RETENTION_DAYS: Final[int] = 60
+
 # Binary sensor types
 BSENSOR_SCHULFREI: Final[str] = "schulfrei"
 
