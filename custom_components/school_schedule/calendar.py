@@ -88,6 +88,8 @@ class SchoolScheduleCalendar(SchoolScheduleEntity, CalendarEntity):
             self.coordinator.lessons,
             self.coordinator.holidays.periods,
             now,
+            # v2.7.2: cancelled lessons never drive the calendar state
+            self.coordinator.cancellations,
         )
         if upcoming is None:
             return None
@@ -110,6 +112,8 @@ class SchoolScheduleCalendar(SchoolScheduleEntity, CalendarEntity):
             start_local.date(),
             end_local.date(),
             tz,
+            # v2.7.2: cancelled occurrences are not events
+            self.coordinator.cancellations,
         )
         # Exact overlap trim at datetime granularity (mirrors
         # local_calendar's timeline.overlapping semantics): the day-range

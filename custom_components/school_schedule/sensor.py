@@ -37,7 +37,7 @@ from .const import (
 )
 from .coordinator import SchoolScheduleCoordinator
 from .entity import SchoolScheduleEntity
-from .lesson_logic import count_real_lessons
+from .lesson_logic import count_active_lessons, count_real_lessons
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,17 +99,22 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
 
         v2.5.9: breaks (is_break=True) are not teaching lessons and are
         excluded from the count.
+        v2.7.2: cancelled lessons (Einzelstunden-Ausfall) are excluded
+        too — they do not take place, so they must not inflate the count.
         """
-        return count_real_lessons(self._get_lessons())
+        return count_active_lessons(self._get_lessons())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed lesson attributes."""
         lessons = self._get_lessons()
+        cancelled_count = sum(1 for lesson in lessons if lesson.get("cancelled", False))
         attrs: dict[str, Any] = {
             "child_name": self._child_name,
-            "total_lessons": count_real_lessons(lessons),
+            "total_lessons": count_active_lessons(lessons),
             "break_count": sum(1 for lesson in lessons if lesson.get(CONF_IS_BREAK, False)),
+            # v2.7.2: how many lessons are called off for this day
+            "cancelled_count": cancelled_count,
             "lessons": [],
         }
 
@@ -126,18 +131,26 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                 "color": lesson.get(CONF_COLOR, ""),
                 "icon": lesson.get(CONF_ICON, ""),
                 "is_break": lesson.get(CONF_IS_BREAK, False),
+                # v2.7.2: cancellation flag + reason for this occurrence
+                "cancelled": lesson.get("cancelled", False),
+                "cancelled_note": lesson.get("cancelled_note", ""),
             }
             lesson_list.append(lesson_data)
 
         attrs["lessons"] = lesson_list
         attrs["weekday"] = self._get_weekday_name()
+        # v2.7.2: the concrete date this sensor currently stands for
+        # (today for heute/morgen; next occurrence for weekday sensors)
+        attrs["schedule_date"] = self._get_schedule_date()
 
-        # Find current/next lesson if today
+        # Find current/next lesson if today (v2.7.2: cancelled lessons
+        # never qualify as current/next — the child is not there)
         if self._sensor_type == SENSOR_TODAY:
-            current = self._find_current_lesson(lessons)
+            active = self._get_active_lessons()
+            current = self._find_current_lesson(active)
             if current:
                 attrs["current_lesson"] = current
-            next_lesson = self._find_next_lesson(lessons)
+            next_lesson = self._find_next_lesson(active)
             if next_lesson:
                 attrs["next_lesson"] = next_lesson
 
@@ -181,6 +194,37 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                 SENSOR_FRIDAY: "friday",
             }
             return day_map.get(self._sensor_type, self._sensor_type)
+
+    def _get_schedule_date(self) -> str:
+        """The concrete ISO date this sensor's plan stands for (v2.7.2)."""
+        data = self.coordinator.data
+        if data is None:
+            return ""
+        if self._sensor_type == SENSOR_TODAY:
+            return data.get("today_date", "")
+        if self._sensor_type == SENSOR_TOMORROW:
+            return data.get("tomorrow_date", "")
+        day_map = {
+            SENSOR_MONDAY: "monday",
+            SENSOR_TUESDAY: "tuesday",
+            SENSOR_WEDNESDAY: "wednesday",
+            SENSOR_THURSDAY: "thursday",
+            SENSOR_FRIDAY: "friday",
+        }
+        key = day_map.get(self._sensor_type, self._sensor_type)
+        return data.get(f"{key}_date", "")
+
+    def _get_active_lessons(self) -> list[dict[str, Any]]:
+        """Lessons excluding cancelled ones (v2.7.2).
+
+        JETZT/NÄCHSTES must never point at a cancelled lesson — the
+        child is not sitting in that classroom.
+        """
+        return [
+            lesson
+            for lesson in self._get_lessons()
+            if not lesson.get("cancelled", False)
+        ]
 
     def _strip_seconds(self, t: str) -> str:
         """Strip seconds from time string (HH:MM:SS -> HH:MM)."""
@@ -229,6 +273,8 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "color": lesson.get(CONF_COLOR, ""),
                     "icon": lesson.get(CONF_ICON, ""),
                     "is_break": lesson.get(CONF_IS_BREAK, False),
+                    "cancelled": lesson.get("cancelled", False),
+                    "cancelled_note": lesson.get("cancelled_note", ""),
                 }
         return None
 
@@ -253,6 +299,8 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
                     "color": lesson.get(CONF_COLOR, ""),
                     "icon": lesson.get(CONF_ICON, ""),
                     "is_break": lesson.get(CONF_IS_BREAK, False),
+                    "cancelled": lesson.get("cancelled", False),
+                    "cancelled_note": lesson.get("cancelled_note", ""),
                 }
         return None
 
@@ -311,6 +359,10 @@ class AbsenceSensor(SchoolScheduleEntity, SensorEntity):
             "sick_entries",
             "absence_count",
             "sick_days_year",
+            # v2.7.2: lesson cancellations for the card + automations
+            "cancelled_today",
+            "cancelled_tomorrow",
+            "upcoming_cancellations",
         ):
             if key in data:
                 attrs[key] = data[key]

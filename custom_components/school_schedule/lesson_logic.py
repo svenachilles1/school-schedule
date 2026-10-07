@@ -27,6 +27,23 @@ def count_real_lessons(lessons: list[dict[str, Any]]) -> int:
     return sum(1 for lesson in lessons if not lesson.get(CONF_IS_BREAK, False))
 
 
+def count_active_lessons(lessons: list[dict[str, Any]]) -> int:
+    """Real lessons that actually take place (v2.7.2).
+
+    Excludes breaks AND cancelled lessons: a lesson marked "entfällt" for
+    its concrete date does not take place, so it must not inflate the
+    today/tomorrow/weekday counters. The lesson stays visible in the
+    attributes (with the cancelled flag) for the card's strikethrough
+    rendering — only the COUNT drops.
+    """
+    return sum(
+        1
+        for lesson in lessons
+        if not lesson.get(CONF_IS_BREAK, False)
+        and not lesson.get("cancelled", False)
+    )
+
+
 def lesson_uid_for(weekday: str | None, number: Any) -> str:
     """Deterministic uid per (weekday, lesson_number) slot (v2.5.7)."""
     return f"{weekday}-{int(number)}"

@@ -24,6 +24,7 @@ from .const import (
     SERVICE_SET_FEDERAL_STATE,
     SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY,
     SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, ATTR_DATE, ATTR_NOTE,
+    SERVICE_MARK_LESSON_CANCELLED, SERVICE_UNMARK_LESSON_CANCELLED,
 )
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
@@ -105,6 +106,23 @@ UPDATE_SICK_DAY_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("date"): cv.string,
     vol.Optional("note", default=""): cv.string,
+})
+
+# v2.7.2: single-lesson cancellations (Einzelstunden-Ausfall). Both the
+# date AND the lesson slot are mandatory — "cancel something today" is
+# meaningless without knowing WHICH lesson. Optional ``note`` carries the
+# reason ("Lehrer krank", "Ausflug").
+MARK_LESSON_CANCELLED_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("date"): cv.string,
+    vol.Required("lesson_number"): vol.Coerce(int),
+    vol.Optional("note", default=""): cv.string,
+})
+
+UNMARK_LESSON_CANCELLED_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("date"): cv.string,
+    vol.Required("lesson_number"): vol.Coerce(int),
 })
 
 
@@ -365,6 +383,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"{day.isoformat()} is not marked sick for {child_name} — mark it first, then edit"
                 )
 
+        async def handle_mark_lesson_cancelled(call: ServiceCall) -> None:
+            """Handle mark_lesson_cancelled service call (v2.7.2)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_required_date(call.data.get("date"))
+            lesson_number = int(call.data["lesson_number"])
+            note = str(call.data.get("note", "") or "")
+
+            # Guard 1: the date must be a school weekday — a Saturday or
+            # Sunday date is a typo/user error, silently storing it would
+            # produce a cancellation nothing ever renders.
+            if day.weekday() >= 5:
+                raise HomeAssistantError(
+                    f"{day.isoformat()} is a weekend day — there are no lessons to cancel"
+                )
+
+            # Guard 2: the lesson slot must exist in the weekly plan for
+            # that weekday. Cancelling a lesson that does not exist is a
+            # silent no-op in every consumer — refuse it up front with a
+            # clear message instead (the high-end way, not guesswork).
+            weekday_name = WEEKDAYS[day.weekday()]
+            from .lesson_logic import slot_taken as _slot_taken
+            if not _slot_taken(coordinator.lessons, weekday_name, lesson_number):
+                raise HomeAssistantError(
+                    f"No lesson #{lesson_number} on {weekday_name} for {child_name} — "
+                    "nothing to cancel. Check the lesson number (1-12) and the date's weekday"
+                )
+
+            await coordinator.mark_lesson_cancelled(day, lesson_number, note)
+
+        async def handle_unmark_lesson_cancelled(call: ServiceCall) -> None:
+            """Handle unmark_lesson_cancelled service call (v2.7.2)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_required_date(call.data.get("date"))
+            lesson_number = int(call.data["lesson_number"])
+            removed = await coordinator.unmark_lesson_cancelled(day, lesson_number)
+            if not removed:
+                raise HomeAssistantError(
+                    f"Lesson #{lesson_number} on {day.isoformat()} was not cancelled for {child_name}"
+                )
+
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
@@ -374,6 +434,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, SERVICE_UNMARK_SICK_DAY, handle_unmark_sick_day, schema=UNMARK_SICK_DAY_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_MARK_SICK_RANGE, handle_mark_sick_range, schema=MARK_SICK_RANGE_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_SICK_DAY, handle_update_sick_day, schema=UPDATE_SICK_DAY_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_MARK_LESSON_CANCELLED, handle_mark_lesson_cancelled, schema=MARK_LESSON_CANCELLED_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_UNMARK_LESSON_CANCELLED, handle_unmark_lesson_cancelled, schema=UNMARK_LESSON_CANCELLED_SCHEMA)
         _LOGGER.info("School Schedule services registered")
 
     return True
@@ -400,7 +462,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(v, SchoolScheduleCoordinator)
         ]
         if not remaining:
-            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY]:
+            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, SERVICE_MARK_LESSON_CANCELLED, SERVICE_UNMARK_LESSON_CANCELLED]:
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
 

@@ -35,6 +35,7 @@ from .const import (
     WEEKDAY_MAP,
 )
 from .holiday_logic import STATUS_SCHOOL_DAY, day_status
+from .cancellation_logic import is_lesson_cancelled
 
 # Safety net for the next-upcoming scan: must exceed the longest German
 # summer break (~6 weeks) with a wide margin. 400 days > 1 year.
@@ -116,12 +117,19 @@ def build_events(
     start_date: date,
     end_date: date,
     tz: Any,
+    cancellations: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """All events whose interval overlaps [start_date, end_date] (inclusive).
 
     Iterates calendar days from start_date to end_date, skips school-free
     days (vacation / public holiday / weekend via day_status) and emits one
     event per lesson of that weekday. Result is sorted by start datetime.
+
+    v2.7.2: lessons marked cancelled for that concrete date are skipped
+    (Vertretungsplan-Light) — a cancelled lesson is no event, automations
+    firing on it would lie. ``cancellations`` is the coordinator's
+    normalised cancellation list; None keeps the old behaviour (used by
+    the pure unit tests).
     """
     if end_date < start_date:
         return []
@@ -140,6 +148,14 @@ def build_events(
     while day <= end_date:
         if day_status(day, periods)["status"] == STATUS_SCHOOL_DAY:
             for lesson in grouped.get(day.weekday(), []):
+                # v2.7.2: skip cancelled occurrences for THIS date
+                if (
+                    cancellations is not None
+                    and is_lesson_cancelled(
+                        cancellations, day, lesson.get(CONF_LESSON_NUMBER)
+                    )
+                ):
+                    continue
                 event = _event_for_lesson(lesson, day, tz)
                 # True overlap semantics (mirrors local_calendar's
                 # timeline.overlapping): keep events intersecting the window.
@@ -155,6 +171,7 @@ def next_upcoming_event(
     lessons: list[dict[str, Any]],
     periods: list[dict[str, Any]],
     now: datetime,
+    cancellations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """The current or next event from ``now`` (local_calendar semantics).
 
@@ -162,6 +179,8 @@ def next_upcoming_event(
     - Otherwise the next lesson on ``now``'s date, or on the next school day
       (skipping weekends, public holidays and vacations).
     - None when the schedule has no lessons at all.
+    - v2.7.2: cancelled occurrences are skipped — the calendar state
+      must never announce a lesson that was called off.
     """
     grouped = _lessons_by_weekday(lessons)
     if not grouped:
@@ -177,6 +196,13 @@ def next_upcoming_event(
         if not day_lessons:
             continue
         for lesson in day_lessons:
+            if (
+                cancellations is not None
+                and is_lesson_cancelled(
+                    cancellations, day, lesson.get(CONF_LESSON_NUMBER)
+                )
+            ):
+                continue
             event = _event_for_lesson(lesson, day, tz)
             if event["end"] > now:
                 return event
