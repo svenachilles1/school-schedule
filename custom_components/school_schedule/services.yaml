@@ -419,6 +419,128 @@ unmark_lesson_cancelled:
           max: 12
           mode: box
 
+mark_date_exception:
+  name: Datum-Ausnahme erfassen
+  description: Markiert einen konkreten Tag für dieses Kind als Ausnahme (z.B. Klassenfahrt, Schulfest, Halbtag) — ohne den Wochenplan zu ändern.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: Datum des Schultags im Format JJJJ-MM-TT (kein Wochenende).
+      required: true
+      example: "2026-10-15"
+      selector:
+        text:
+    exception_type:
+      name: Art der Ausnahme
+      description: "'free' = ganzer Tag ohne Unterricht (Klassenfahrt, Schulfest). 'partial' = Halbtag — Unterricht nur bis zur angegebenen Stunde, der Rest entfällt."
+      required: true
+      example: free
+      selector:
+        select:
+          options:
+            - label: "Ganzer Tag frei (Klassenfahrt, Schulfest)"
+              value: free
+            - label: "Halbtag (bis Stunde N Unterricht)"
+              value: partial
+    until_lesson:
+      name: Letzte Stunde
+      description: Nur bei 'partial' — die letzte Stunde, die noch stattfindet (1-12). Alles danach entfällt an diesem Tag.
+      required: false
+      example: 4
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    note:
+      name: Notiz
+      description: Optionaler Grund (z.B. "Klassenfahrt", "Zeugnisse").
+      required: false
+      example: "Klassenfahrt"
+      selector:
+        text:
+
+mark_date_exception_range:
+  name: Datum-Ausnahme (Zeitraum)
+  description: Markiert jeden Tag von-bis als Ausnahme (z.B. mehrtägige Klassenfahrt) — ohne den Wochenplan zu ändern.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    start_date:
+      name: Von
+      description: Erstes Datum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-12"
+      selector:
+        text:
+    end_date:
+      name: Bis
+      description: Letztes Datum im Format JJJJ-MM-TT (inklusiv).
+      required: true
+      example: "2026-10-15"
+      selector:
+        text:
+    exception_type:
+      name: Art der Ausnahme
+      description: "'free' = ganzer Tag ohne Unterricht. 'partial' = Halbtag bis zur angegebenen Stunde, gilt für jeden Schultag im Zeitraum."
+      required: true
+      example: free
+      selector:
+        select:
+          options:
+            - label: "Ganzer Tag frei (Klassenfahrt, Schulfest)"
+              value: free
+            - label: "Halbtag (bis Stunde N Unterricht)"
+              value: partial
+    until_lesson:
+      name: Letzte Stunde
+      description: Nur bei 'partial' — die letzte Stunde, die noch stattfindet (1-12).
+      required: false
+      example: 4
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    note:
+      name: Notiz
+      description: Optionaler Grund (z.B. "Klassenfahrt nach Berlin").
+      required: false
+      example: "Klassenfahrt"
+      selector:
+        text:
+
+unmark_date_exception:
+  name: Datum-Ausnahme aufheben
+  description: Entfernt die Ausnahme für den angegebenen Tag — der reguläre Stundenplan gilt wieder.
+  fields:
+    child_name:
+      name: Name des Kindes
+      description: Name des Kindes.
+      required: true
+      example: Max
+      selector:
+        text:
+    date:
+      name: Datum
+      description: Datum im Format JJJJ-MM-TT.
+      required: true
+      example: "2026-10-15"
+      selector:
+        text:
+
 get_schedule:
   name: Stundenplan abrufen
   description: Ruft den Stundenplan für einen bestimmten Wochentag ab.

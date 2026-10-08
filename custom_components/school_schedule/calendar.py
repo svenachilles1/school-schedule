@@ -90,6 +90,9 @@ class SchoolScheduleCalendar(SchoolScheduleEntity, CalendarEntity):
             now,
             # v2.7.2: cancelled lessons never drive the calendar state
             self.coordinator.cancellations,
+            # v2.7.3: free exception days are skipped, partial days
+            # cancel everything after until_lesson
+            self.coordinator.exceptions,
         )
         if upcoming is None:
             return None
@@ -114,6 +117,9 @@ class SchoolScheduleCalendar(SchoolScheduleEntity, CalendarEntity):
             tz,
             # v2.7.2: cancelled occurrences are not events
             self.coordinator.cancellations,
+            # v2.7.3: date exceptions (free days = no events, partial days
+            # cancel everything after until_lesson)
+            self.coordinator.exceptions,
         )
         # Exact overlap trim at datetime granularity (mirrors
         # local_calendar's timeline.overlapping semantics): the day-range

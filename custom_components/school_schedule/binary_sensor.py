@@ -101,6 +101,10 @@ class SchoolFreeBinarySensor(SchoolScheduleEntity, BinarySensorEntity):
             # v2.7.1: legacy migration marker — False = the state is the
             # untouched default, the card may migrate a localStorage choice.
             "federal_state_configured",
+            # v2.7.3: today's/tomorrow's date exception (if any) for the
+            # card's exception banners and quick actions
+            "exception_today",
+            "exception_tomorrow",
         ):
             if key in data:
                 attrs[key] = data[key]
