@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.3
+ * School Schedule Card — Ultra Premium v2.7.4
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -75,6 +75,9 @@ class SchoolScheduleCard extends HTMLElement {
     this._shadow = this.attachShadow({ mode: "open" });
     this._shadow.addEventListener("click", (e) => this._handleClick(e));
     this._shadow.addEventListener("input", (e) => this._handleInput(e));
+    // v2.7.4: date/number fields fire change (not input) on some browsers —
+    // route it through the same input handler (idempotent state sets).
+    this._shadow.addEventListener("change", (e) => this._handleInput(e));
     this._progress = null;
     this._confettiFired = false;
     this._progressDay = "";
@@ -94,6 +97,7 @@ class SchoolScheduleCard extends HTMLElement {
     this._excException = null;   // exception dialog form state {date_iso, exception_type, note, until_lesson}
     this._excRange = false;      // range form (Von-Bis) open?
     this._excDelete = null;      // date with pending 2-click delete confirm
+    this._excError = null;       // v2.7.4: visible validation error key
   }
 
   static get STRINGS() {
@@ -203,6 +207,10 @@ class SchoolScheduleCard extends HTMLElement {
         exc_banner_partial: "Heute Halbtag",
         exc_banner_tomorrow_free: "Morgen kein Unterricht",
         exc_banner_tomorrow_partial: "Morgen Halbtag",
+        exc_range_type: "Ausnahmetyp",
+        exc_err_date: "Bitte ein Datum w\u00e4hlen",
+        exc_err_until: "Bitte \u201ebis Stunde\u201c angeben (1\u201312)",
+        exc_err_range: "Bitte Von- und Bis-Datum angeben",
         attest_warning_text: "Ab dem 3. Kranktag ist ein \u00e4rztliches Attest n\u00f6tig \u2014 bei weiterer Krankheit morgen mitbringen!",
         attest_required_text: "Attestpflicht: Ab dem 3. Kranktag in Folge wird ein \u00e4rztliches Attest ben\u00f6tigt!",
         sick_day: "Tag",
@@ -314,6 +322,10 @@ class SchoolScheduleCard extends HTMLElement {
         exc_banner_partial: "Half day today",
         exc_banner_tomorrow_free: "No school tomorrow",
         exc_banner_tomorrow_partial: "Half day tomorrow",
+        exc_range_type: "Exception type",
+        exc_err_date: "Please pick a date",
+        exc_err_until: "Please provide \u201cuntil lesson\u201d (1\u201312)",
+        exc_err_range: "Please provide from and to dates",
         attest_warning_text: "From the 3rd sick day a doctor's note is required — bring one tomorrow if still sick!",
         attest_required_text: "Doctor's note required: from the 3rd consecutive sick day a medical certificate is needed!",
         sick_day: "day",
@@ -655,15 +667,15 @@ class SchoolScheduleCard extends HTMLElement {
         break;
       case "exc-type-free": this._setExcType("free"); break;
       case "exc-type-partial": this._setExcType("partial"); break;
-      case "exc-date-change": this._excDateChange(e); break;
-      case "exc-until-change": this._excUntilChange(e); break;
-      case "exc-note-input": this._excNoteInput(e); break;
+      // v2.7.4: the exception form inputs (exc-date-change, exc-until-change,
+      // exc-note-input) are routed via the input/change listener
+      // (_handleInput) — typing in a field never fires a click.
       case "exc-save": this._saveException(); break;
       case "exc-range-toggle": this._excRange = !this._excRange; this._render(); break;
       case "exc-range-cancel": this._excRange = false; this._render(); break;
       case "exc-range-save": this._saveExceptionRange(); break;
-      case "exc-delete": this._excDelete = e.target.dataset.date || null; this._render(); break;
-      case "exc-delete-confirm-yes": this._deleteException(e.target.dataset.date); break;
+      case "exc-delete": this._excDelete = actionEl.dataset.date || null; this._render(); break;
+      case "exc-delete-confirm-yes": this._deleteException(actionEl.dataset.date); break;
       case "exc-delete-confirm-no": this._excDelete = null; this._render(); break;
       case "exc-delete-list": this._excDelete = null; this._render(); break;
       case "uncancel-lesson": this._uncancelLesson(e.target.closest("[data-date]").getAttribute("data-date"), parseInt(e.target.closest("[data-number]").getAttribute("data-number"), 10)); break;
@@ -671,6 +683,15 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   _handleInput(e) {
+    // v2.7.4: exception form inputs carry data-action but fire input/change,
+    // not click — route them here first.
+    const excInputEl = (e.target && e.target.closest) ? e.target.closest("[data-action]") : null;
+    if (excInputEl) {
+      const excInputAction = excInputEl.dataset.action || "";
+      if (excInputAction === "exc-note-input") { this._excNoteInput(e); return; }
+      if (excInputAction === "exc-until-change") { this._excUntilChange(e); return; }
+      if (excInputAction === "exc-date-change") { this._excDateChange(e); return; }
+    }
     if (e.target.id === "ssc-icon") {
       const preview = this._shadow.querySelector("#ssc-icon-preview");
       if (preview) preview.icon = e.target.value || "mdi:school";
@@ -1141,6 +1162,7 @@ class SchoolScheduleCard extends HTMLElement {
     this._excModal = true;
     this._excRange = false;
     this._excDelete = null;
+    this._excError = null;
     // Default form state — set HERE (opening), never in the renderer:
     // _renderExcModal must stay pure so saving (which nulls the form and
     // re-renders) cannot resurrect a ghost dialog state.
@@ -1158,18 +1180,30 @@ class SchoolScheduleCard extends HTMLElement {
     this._excException = null;
     this._excRange = false;
     this._excDelete = null;
+    this._excError = null;
     this._render();
   }
 
   _excDateChange(e) {
     if (!this._excException) return;
     this._excException.date_iso = e.target.value || "";
-    this._render();
+    // v2.7.4: no re-render here — re-rendering on every input steals the
+    // focus from the field. The state is what counts at save time; the
+    // field itself already shows the picked value.
+    this._clearExcError();
   }
 
   _setExcType(type) {
     if (!this._excException) return;
     this._excException.exception_type = type;
+    // v2.7.4: seed the until default when switching to partial so the form
+    // state matches the visible field value (4) — saving without touching
+    // the field must never hit the until guard.
+    if (type === "partial" && (this._excException.until_lesson === null
+        || this._excException.until_lesson === undefined
+        || isNaN(parseInt(this._excException.until_lesson, 10)))) {
+      this._excException.until_lesson = 4;
+    }
     if (type !== "partial") this._excException.until_lesson = null;
     this._render();
   }
@@ -1178,11 +1212,23 @@ class SchoolScheduleCard extends HTMLElement {
     if (!this._excException) return;
     const v = parseInt(e.target.value, 10);
     this._excException.until_lesson = isNaN(v) ? null : v;
+    this._clearExcError();
   }
 
   _excNoteInput(e) {
     if (!this._excException) return;
     this._excException.note = e.target.value || "";
+    this._clearExcError();
+  }
+
+  _clearExcError() {
+    // v2.7.4: dismiss the visible save error without a full re-render
+    // (keeps field focus) — flag reset + direct DOM node removal.
+    if (this._excError) {
+      this._excError = null;
+      const errEl = this._shadow.querySelector(".ssc-exc-error");
+      if (errEl) errEl.remove();
+    }
   }
 
   _saveException() {
@@ -1194,15 +1240,59 @@ class SchoolScheduleCard extends HTMLElement {
       exception_type: ex.exception_type,
       note: ex.note || "",
     };
+    if (!ex.date_iso) { this._showExcError("exc_err_date"); return; }
     if (ex.exception_type === "partial") {
       const until = parseInt(ex.until_lesson, 10);
-      if (isNaN(until) || until < 1 || until > 12) return; // guard: no partial without valid until
+      if (isNaN(until) || until < 1 || until > 12) {
+        // v2.7.4: silent returns hide the guard — surface it in the modal
+        this._showExcError("exc_err_until");
+        return;
+      }
       data.until_lesson = until;
     }
     this._hass.callService("school_schedule", "mark_date_exception", data);
     this._excException = null;
     this._excRange = false;
+    this._excError = null;
+    // v2.7.4: optimistic list add (sick-day pattern) — the entry appears
+    // immediately; the backend attribute replaces it on the next hass push.
+    this._optimisticAddException(data);
     this._render();
+  }
+
+  _showExcError(key) {
+    // v2.7.4: visible validation feedback — inserted directly into the DOM
+    // (NO full re-render) so field focus and values stay stable; symmetric
+    // to _clearExcError which removes the node the same way. The renderer
+    // fallback (_renderExcModal) still honors this._excError on later renders.
+    this._excError = key;
+    if (!this._shadow) return;
+    let errEl = this._shadow.querySelector(".ssc-exc-error");
+    if (!errEl) {
+      const cardEl = this._shadow.querySelector(".ssc-exc-card");
+      if (!cardEl) return;
+      const btnRow = cardEl.querySelector(".ssc-form-buttons");
+      if (!btnRow) return;
+      errEl = document.createElement("div");
+      errEl.className = "ssc-exc-error";
+      if (btnRow.nextSibling) cardEl.insertBefore(errEl, btnRow.nextSibling);
+      else cardEl.appendChild(errEl);
+    }
+    errEl.innerHTML = '<ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:16px"></ha-icon>' + this._t(key);
+  }
+
+  _optimisticAddException(data) {
+    if (!data || !data.date) return;
+    if (!Array.isArray(this._exceptions)) this._exceptions = [];
+    if (!this._exceptions.some(function(x) { return x.date === data.date; })) {
+      this._exceptions.push({
+        date: data.date,
+        exception_type: data.exception_type,
+        note: data.note || "",
+        until_lesson: data.until_lesson || null,
+      });
+      this._exceptions.sort(function(a, b) { return a.date < b.date ? -1 : 1; });
+    }
   }
 
   _saveExceptionRange() {
@@ -1222,12 +1312,13 @@ class SchoolScheduleCard extends HTMLElement {
     if (exType === "partial") {
       const untilEl = this._shadow.querySelector("#ssc-exc-range-until");
       const until = untilEl ? parseInt(untilEl.value, 10) : NaN;
-      if (isNaN(until) || until < 1 || until > 12) return;
+      if (isNaN(until) || until < 1 || until > 12) { this._showExcError("exc_err_until"); return; }
       data.until_lesson = until;
     }
-    if (!data.start_date || !data.end_date) return;
+    if (!data.start_date || !data.end_date) { this._showExcError("exc_err_range"); return; }
     this._hass.callService("school_schedule", "mark_date_exception_range", data);
     this._excRange = false;
+    this._excError = null;
     this._render();
   }
 
@@ -1238,6 +1329,11 @@ class SchoolScheduleCard extends HTMLElement {
       date: dateIso,
     });
     this._excDelete = null;
+    // v2.7.4: optimistic remove (sick-day pattern) — the list shows the
+    // deletion immediately; the backend attribute replaces it on the next
+    // hass push (identical content).
+    this._exceptions = (Array.isArray(this._exceptions) ? this._exceptions : [])
+      .filter(function(x) { return x.date !== dateIso; });
     this._render();
   }
 
@@ -1956,7 +2052,7 @@ class SchoolScheduleCard extends HTMLElement {
           '</div>' +
         '</div>' +
         '<div class="ssc-field">' +
-          '<span class="ssc-field-label">' + this._t("exc_type_partial") + ' (free / partial)</span>' +
+          '<span class="ssc-field-label">' + this._t("exc_range_type") + '</span>' +
           '<select class="ssc-input" id="ssc-exc-range-type">' +
             '<option value="free"' + (isFree ? " selected" : "") + '>' + this._t("exc_type_free") + '</option>' +
             '<option value="partial"' + (!isFree ? " selected" : "") + '>' + this._t("exc_type_partial") + '</option>' +
@@ -2063,6 +2159,9 @@ class SchoolScheduleCard extends HTMLElement {
         '<div class="ssc-form-buttons">' +
           '<button class="ssc-btn ssc-btn-save" data-action="exc-save">' + this._t("exc_save") + '</button>' +
         '</div>' +
+        (this._excError
+          ? '<div class="ssc-exc-error"><ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:16px"></ha-icon>' + this._t(this._excError) + '</div>'
+          : "") +
         '<button class="sick-btn sick-btn-range" data-action="exc-range-toggle">' +
           '<ha-icon icon="mdi:calendar-range" style="--mdc-icon-size:18px"></ha-icon>' +
           '<span>' + this._t("exc_range_title") + '</span>' +
@@ -3052,6 +3151,14 @@ _getSickHistory() {
         border: 1px solid rgba(255,183,77,0.45);
       }
       .sick-banner-exc-partial ha-icon { color:#ffb74d; }
+      .ssc-exc-error {
+        display:flex; align-items:center; gap:6px;
+        margin-top:8px; padding:8px 12px;
+        border-radius:10px; font-size:12px; font-weight:600;
+        color:#ff8a65;
+        background:rgba(255,112,67,0.12);
+        border:1px solid rgba(255,112,67,0.35);
+      }
       .ssc-exc-type {
         font-size: 11px;
         font-weight: 600;
@@ -3517,6 +3624,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.7.3",
+  description: "Stundenplan-Karte Ultra Premium v2.7.4",
   preview: false,
 });
