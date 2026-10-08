@@ -24,9 +24,7 @@ from .const import (
     WEEKDAYS,
 )
 from .holiday_logic import (
-    day_status,
     next_event,
-    next_school_day,
     vacations_for_card,
 )
 from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
@@ -46,7 +44,22 @@ from .cancellation_logic import (
     remove_cancellation,
     upsert_cancellation,
 )
-from .const import ABSENCE_TYPE_SICK, CONF_LESSON_CANCELLATIONS
+from .date_exception_logic import (
+    annotate_with_exceptions,
+    day_exception,
+    effective_day_status,
+    get_entry_exceptions,
+    next_school_day_with_exceptions,
+    prune_exceptions,
+    upsert_exception,
+    mark_exception_range,
+    remove_exception,
+)
+from .const import (
+    ABSENCE_TYPE_SICK,
+    CONF_DATE_EXCEPTIONS,
+    CONF_LESSON_CANCELLATIONS,
+)
 from .holidays import (
     SharedHolidaysCoordinator,
     federal_state_from_entry,
@@ -54,6 +67,18 @@ from .holidays import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _exception_view(entry: dict[str, Any] | None) -> dict[str, Any] | None:
+    """JSON-safe view of one exception entry for coordinator data (v2.7.3)."""
+    if entry is None:
+        return None
+    return {
+        "date": str(entry.get("date") or ""),
+        "exception_type": str(entry.get("exception_type") or ""),
+        "note": str(entry.get("note") or ""),
+        "until_lesson": entry.get("until_lesson"),
+    }
 
 
 class SchoolScheduleCoordinator(DataUpdateCoordinator):
@@ -88,6 +113,13 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         # detached from entry.data (the v2.5.1/v2.5.2 persistence lesson,
         # applied from day one).
         self.cancellations: list[dict[str, Any]] = get_entry_cancellations(
+            dict(entry.data)
+        )
+        # v2.7.3: date exceptions (Klassenfahrt, Schulfest, Halbtag).
+        # Same deep-copy discipline — self.exceptions must stay fully
+        # detached from entry.data (the v2.5.1/v2.5.2 persistence lesson,
+        # applied from day one).
+        self.exceptions: list[dict[str, Any]] = get_entry_exceptions(
             dict(entry.data)
         )
         # v2.5.7: backfill deterministic lesson uids for legacy
@@ -125,6 +157,7 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             ensure_lesson_uids(self.lessons)
             self.absences = get_entry_absences(dict(updated.data))
             self.cancellations = get_entry_cancellations(dict(updated.data))
+            self.exceptions = get_entry_exceptions(dict(updated.data))
 
         # v2.6.0: prune absence entries older than the retention window.
         # Runs on every coordinator refresh (15 min) so entry.data cannot
@@ -140,6 +173,12 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         if changed_c:
             self.cancellations = pruned_c
             await self._persist_cancellations()
+
+        # v2.7.3: same retention pruning for date exceptions.
+        pruned_e, changed_e = prune_exceptions(self.exceptions, today)
+        if changed_e:
+            self.exceptions = pruned_e
+            await self._persist_exceptions()
 
         # Refresh holiday data if stale (at most one API request per 24h
         # per federal state — shared between all children in that state).
@@ -163,8 +202,10 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         tomorrow_weekday = WEEKDAYS[tomorrow.weekday()] if tomorrow.weekday() < 5 else None
 
         periods = self.holidays.periods
-        today_h = day_status(today_date, periods)
-        tomorrow_h = day_status(tomorrow_date, periods)
+        # v2.7.3: kind-specific free exceptions override the generic day
+        # status (free exception > vacation > public holiday > weekend).
+        today_h = effective_day_status(today_date, periods, self.exceptions)
+        tomorrow_h = effective_day_status(tomorrow_date, periods, self.exceptions)
 
         # v2.7.2: single-lesson cancellations. Concrete-date semantics:
         # - today/tomorrow lessons are annotated with THAT date's cancels
@@ -197,7 +238,9 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
             "tomorrow_status": tomorrow_h["status"],
             "tomorrow_reason": tomorrow_h["reason"],
             "tomorrow_school_free": tomorrow_h["status"] != "school_day",
-            "next_school_day": next_school_day(today_date, periods),
+            "next_school_day": next_school_day_with_exceptions(
+                today_date, periods, self.exceptions
+            ),
             "next_vacation": next_event(today_date, periods, event_type="vacation"),
             "next_public_holiday": next_event(today_date, periods, event_type="holiday"),
             "holidays_count": len(periods),
@@ -248,12 +291,31 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
                 for e in self.cancellations
                 if e.get("date", "") >= today_date.isoformat()
             ],
+            # v2.7.3: date exceptions for the card's exception manager.
+            # exception_today/tomorrow give the current day's entry;
+            # date_exceptions feeds the editable modal list (past entries
+            # included — deleting a wrong entry must be possible).
+            "exception_today": _exception_view(
+                day_exception(self.exceptions, today_date)
+            ),
+            "exception_tomorrow": _exception_view(
+                day_exception(self.exceptions, tomorrow_date)
+            ),
+            "date_exceptions": [
+                {
+                    "date": e["date"],
+                    "exception_type": e["exception_type"],
+                    "note": str(e.get("note") or ""),
+                    "until_lesson": e.get("until_lesson"),
+                }
+                for e in self.exceptions
+            ],
         }
 
         for day in WEEKDAYS:
             day_date = next_dates[day]
-            data[day] = annotate_lessons(
-                self._get_lessons_for_day(day), self.cancellations, day_date
+            data[day] = annotate_with_exceptions(
+                self._get_lessons_for_day(day), self.cancellations, self.exceptions, day_date
             )
             data[f"{day}_date"] = day_date.isoformat()
 
@@ -286,9 +348,9 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         self, day: date, weekday: str | None
     ) -> list[dict[str, Any]]:
         """Lessons for a concrete date, annotated with that date's
-        cancellations (v2.7.2)."""
-        return annotate_lessons(
-            self._get_lessons_for_day(weekday), self.cancellations, day
+        cancellations AND date exceptions (v2.7.3)."""
+        return annotate_with_exceptions(
+            self._get_lessons_for_day(weekday), self.cancellations, self.exceptions, day
         )
 
     async def add_lesson(self, lesson: dict[str, Any]) -> bool:
@@ -609,4 +671,99 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "Persisted %d cancellations for %s",
             len(self.cancellations), self.child_name,
+        )
+
+    # ─── Date exceptions (v2.7.3) ──────────────────────────────────────
+
+    async def mark_date_exception(
+        self,
+        day: date,
+        exception_type: str,
+        note: str = "",
+        until_lesson: int | None = None,
+    ) -> bool:
+        """Mark ``day`` with a date exception (free / partial).
+
+        Idempotent: re-marking an existing day only updates type/note/
+        until_lesson. The weekly plan is never touched — the exception
+        lives on its concrete date.
+        """
+        new_exceptions, changed = upsert_exception(
+            self.exceptions, day, exception_type, note, until_lesson
+        )
+        if not changed:
+            _LOGGER.debug(
+                "mark_date_exception: %s for %s unchanged (already set)",
+                day.isoformat(), self.child_name,
+            )
+            return True
+        self.exceptions = new_exceptions
+        await self._persist_exceptions()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "mark_date_exception: %s %s for %s (note=%r, until=%r)",
+            day.isoformat(), exception_type, self.child_name, note, until_lesson,
+        )
+        return True
+
+    async def mark_date_exception_range(
+        self,
+        start: date,
+        end: date,
+        exception_type: str,
+        note: str = "",
+        until_lesson: int | None = None,
+    ) -> int:
+        """Mark ``start..end`` (inclusive) with the exception (v2.7.3).
+
+        Returns the number of days actually added/updated. Raises
+        ValueError (translated by the service handler) when the range is
+        invalid — the exception list stays untouched then.
+        """
+        new_exceptions, changed, error = mark_exception_range(
+            self.exceptions, start, end, exception_type, note, until_lesson
+        )
+        if error is not None:
+            raise ValueError(error)
+        if changed == 0:
+            _LOGGER.debug(
+                "mark_date_exception_range: %s..%s for %s unchanged",
+                start.isoformat(), end.isoformat(), self.child_name,
+            )
+            return 0
+        self.exceptions = new_exceptions
+        await self._persist_exceptions()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "mark_date_exception_range: %s..%s %s for %s (%d days, note=%r)",
+            start.isoformat(), end.isoformat(), exception_type,
+            self.child_name, changed, note,
+        )
+        return changed
+
+    async def unmark_date_exception(self, day: date) -> bool:
+        """Remove the exception for ``day``. Returns False when there was none."""
+        new_exceptions, removed = remove_exception(self.exceptions, day)
+        if not removed:
+            return False
+        self.exceptions = new_exceptions
+        await self._persist_exceptions()
+        self.async_set_updated_data(self._build_schedule_data())
+        _LOGGER.info(
+            "unmark_date_exception: %s removed for %s",
+            day.isoformat(), self.child_name,
+        )
+        return True
+
+    async def _persist_exceptions(self) -> None:
+        """Persist date exceptions to the config entry data (same discipline)."""
+        new_data = {
+            **self.entry.data,
+            CONF_DATE_EXCEPTIONS: copy.deepcopy(self.exceptions),
+        }
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self._refresh_entry_ref()
+        _LOGGER.debug(
+            "Persisted %d date exceptions for %s",
+            len(self.exceptions), self.child_name,
         )

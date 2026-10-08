@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.2
+ * School Schedule Card — Ultra Premium v2.7.3
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -88,6 +88,12 @@ class SchoolScheduleCard extends HTMLElement {
     // v2.7.2: lesson cancellation dialog state (edit mode)
     this._cancelLesson = null;   // {weekday, lesson_number, lesson_uid, subject, date_iso}
     this._cancellations = [];    // upcoming cancellations from the absence sensor
+    // v2.7.3: date exception manager state
+    this._exceptions = [];       // full exception list from the absence sensor
+    this._excModal = false;      // exception modal open?
+    this._excException = null;   // exception dialog form state {date_iso, exception_type, note, until_lesson}
+    this._excRange = false;      // range form (Von-Bis) open?
+    this._excDelete = null;      // date with pending 2-click delete confirm
   }
 
   static get STRINGS() {
@@ -168,14 +174,35 @@ class SchoolScheduleCard extends HTMLElement {
       sick_planned_badge: "geplant",
         cancelled_badge: "ENTF\u00c4LLT",
         cancelled_lesson: "Stunde entf\u00e4llt",
-        cancel_lesson_q: "Stunde entfallen lassen?",
-        cancel_lesson_sub: "Die Stunde wird f\u00fcr dieses Datum als entfallen markiert \u2014 der Wochenplan bleibt unver\u00e4ndert.",
-        cancel_btn: "Entf\u00e4llt lassen",
+        cancel_lesson_q: "Stunde ausfallen lassen?",
+        cancel_lesson_sub: "Die Stunde wird f\u00fcr dieses Datum als Ausfall markiert \u2014 der Wochenplan bleibt unver\u00e4ndert.",
+        cancel_btn: "Ausfall",
         uncancel_btn: "Stunde findet statt",
         cancelled_list_title: "AUSFALL",
         cancelled_list_empty: "Kein Stunden-Ausfall erfasst",
         cancel_note: "Grund (optional)",
         cancel_note_ph: "z.B. Lehrer krank",
+        exc_modal_title: "Tages-Ausnahme",
+        exc_modal_sub: "Konkreten Tag als Ausnahme markieren (Klassenfahrt, Schulfest, Halbtag) \u2014 der Wochenplan bleibt unver\u00e4ndert.",
+        exc_type_free: "Ganzer Tag frei",
+        exc_type_partial: "Halbtag bis Stunde",
+        exc_note: "Grund (optional)",
+        exc_note_ph: "z.B. Klassenfahrt",
+        exc_date: "Datum",
+        exc_range_title: "AUSNAHME (VON\u2013BIS)",
+        exc_range_from: "Von",
+        exc_range_to: "Bis",
+        exc_range_btn: "Ausnahme von\u2013bis markieren",
+        exc_list_title: "AUSNAHMEN",
+        exc_list_empty: "Keine Tages-Ausnahmen erfasst",
+        exc_today_badge: "heute",
+        exc_planned_badge: "geplant",
+        exc_delete_confirm: "Wirklich l\u00f6schen?",
+        exc_save: "Ausnahme setzen",
+        exc_banner_free: "Heute kein Unterricht",
+        exc_banner_partial: "Heute Halbtag",
+        exc_banner_tomorrow_free: "Morgen kein Unterricht",
+        exc_banner_tomorrow_partial: "Morgen Halbtag",
         attest_warning_text: "Ab dem 3. Kranktag ist ein \u00e4rztliches Attest n\u00f6tig \u2014 bei weiterer Krankheit morgen mitbringen!",
         attest_required_text: "Attestpflicht: Ab dem 3. Kranktag in Folge wird ein \u00e4rztliches Attest ben\u00f6tigt!",
         sick_day: "Tag",
@@ -260,12 +287,33 @@ class SchoolScheduleCard extends HTMLElement {
         cancelled_lesson: "Lesson cancelled",
         cancel_lesson_q: "Cancel this lesson?",
         cancel_lesson_sub: "Marks this lesson as cancelled for this date only \u2014 the weekly schedule stays unchanged.",
-        cancel_btn: "Mark as cancelled",
+        cancel_btn: "Cancel lesson",
         uncancel_btn: "Lesson takes place",
         cancelled_list_title: "CANCELLATIONS",
         cancelled_list_empty: "No cancelled lessons recorded",
         cancel_note: "Reason (optional)",
         cancel_note_ph: "e.g. teacher sick",
+        exc_modal_title: "Day exception",
+        exc_modal_sub: "Mark a concrete day as an exception (school trip, school fest, half day) \u2014 the weekly schedule stays unchanged.",
+        exc_type_free: "Whole day off",
+        exc_type_partial: "Half day until lesson",
+        exc_note: "Reason (optional)",
+        exc_note_ph: "e.g. school trip",
+        exc_date: "Date",
+        exc_range_title: "EXCEPTION (FROM\u2013TO)",
+        exc_range_from: "From",
+        exc_range_to: "To",
+        exc_range_btn: "Mark exception from\u2013to",
+        exc_list_title: "EXCEPTIONS",
+        exc_list_empty: "No day exceptions recorded",
+        exc_today_badge: "today",
+        exc_planned_badge: "planned",
+        exc_delete_confirm: "Really delete?",
+        exc_save: "Set exception",
+        exc_banner_free: "No school today",
+        exc_banner_partial: "Half day today",
+        exc_banner_tomorrow_free: "No school tomorrow",
+        exc_banner_tomorrow_partial: "Half day tomorrow",
         attest_warning_text: "From the 3rd sick day a doctor's note is required — bring one tomorrow if still sick!",
         attest_required_text: "Doctor's note required: from the 3rd consecutive sick day a medical certificate is needed!",
         sick_day: "day",
@@ -503,6 +551,10 @@ class SchoolScheduleCard extends HTMLElement {
     // absence sensor attributes — backend single source of truth.
     this._cancellations = Array.isArray(sAttr.upcoming_cancellations)
       ? sAttr.upcoming_cancellations : [];
+    // v2.7.3: date exceptions (Tages-Ausnahmen) from the absence sensor
+    // attributes — backend single source of truth, editable list.
+    this._exceptions = Array.isArray(sAttr.date_exceptions)
+      ? sAttr.date_exceptions : [];
     // Per-day concrete dates: the backend annotates each weekday sensor's
     // lessons with the cancellations for EXACTLY the date that sensor
     // stands for (next occurrence, today counts). We read the date from
@@ -517,7 +569,7 @@ class SchoolScheduleCard extends HTMLElement {
     }
     const todayJs = new Date().getDay();
     this._todayKey = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][todayJs];
-    if (!this._showForm && !this._confirmDelete && !this._sickModal && !this._cancelLesson) {
+    if (!this._showForm && !this._confirmDelete && !this._sickModal && !this._cancelLesson && !this._excModal && !this._excException) {
       this._render();
     }
   }
@@ -595,6 +647,25 @@ class SchoolScheduleCard extends HTMLElement {
       case "cancel-lesson-bg":
         if (!e.target.closest(".ssc-cancel-card")) { this._cancelLesson = null; this._render(); }
         break;
+      // v2.7.3: date exception manager
+      case "open-exc-modal": this._openExcModal(); break;
+      case "exc-close": this._closeExcModal(); break;
+      case "exc-bg":
+        if (!e.target.closest(".ssc-exc-card")) { this._closeExcModal(); }
+        break;
+      case "exc-type-free": this._setExcType("free"); break;
+      case "exc-type-partial": this._setExcType("partial"); break;
+      case "exc-date-change": this._excDateChange(e); break;
+      case "exc-until-change": this._excUntilChange(e); break;
+      case "exc-note-input": this._excNoteInput(e); break;
+      case "exc-save": this._saveException(); break;
+      case "exc-range-toggle": this._excRange = !this._excRange; this._render(); break;
+      case "exc-range-cancel": this._excRange = false; this._render(); break;
+      case "exc-range-save": this._saveExceptionRange(); break;
+      case "exc-delete": this._excDelete = e.target.dataset.date || null; this._render(); break;
+      case "exc-delete-confirm-yes": this._deleteException(e.target.dataset.date); break;
+      case "exc-delete-confirm-no": this._excDelete = null; this._render(); break;
+      case "exc-delete-list": this._excDelete = null; this._render(); break;
       case "uncancel-lesson": this._uncancelLesson(e.target.closest("[data-date]").getAttribute("data-date"), parseInt(e.target.closest("[data-number]").getAttribute("data-number"), 10)); break;
     }
   }
@@ -1064,6 +1135,112 @@ class SchoolScheduleCard extends HTMLElement {
     this._render();
   }
 
+  // === v2.7.3: date exception manager (Tages-Ausnahmen) ===
+
+  _openExcModal() {
+    this._excModal = true;
+    this._excRange = false;
+    this._excDelete = null;
+    // Default form state — set HERE (opening), never in the renderer:
+    // _renderExcModal must stay pure so saving (which nulls the form and
+    // re-renders) cannot resurrect a ghost dialog state.
+    this._excException = {
+      date_iso: this._isoDate("today"),
+      exception_type: "free",
+      note: "",
+      until_lesson: null,
+    };
+    this._render();
+  }
+
+  _closeExcModal() {
+    this._excModal = false;
+    this._excException = null;
+    this._excRange = false;
+    this._excDelete = null;
+    this._render();
+  }
+
+  _excDateChange(e) {
+    if (!this._excException) return;
+    this._excException.date_iso = e.target.value || "";
+    this._render();
+  }
+
+  _setExcType(type) {
+    if (!this._excException) return;
+    this._excException.exception_type = type;
+    if (type !== "partial") this._excException.until_lesson = null;
+    this._render();
+  }
+
+  _excUntilChange(e) {
+    if (!this._excException) return;
+    const v = parseInt(e.target.value, 10);
+    this._excException.until_lesson = isNaN(v) ? null : v;
+  }
+
+  _excNoteInput(e) {
+    if (!this._excException) return;
+    this._excException.note = e.target.value || "";
+  }
+
+  _saveException() {
+    const ex = this._excException;
+    if (!ex || !ex.date_iso) return;
+    const data = {
+      child_name: this._childName,
+      date: ex.date_iso,
+      exception_type: ex.exception_type,
+      note: ex.note || "",
+    };
+    if (ex.exception_type === "partial") {
+      const until = parseInt(ex.until_lesson, 10);
+      if (isNaN(until) || until < 1 || until > 12) return; // guard: no partial without valid until
+      data.until_lesson = until;
+    }
+    this._hass.callService("school_schedule", "mark_date_exception", data);
+    this._excException = null;
+    this._excRange = false;
+    this._render();
+  }
+
+  _saveExceptionRange() {
+    const fromEl = this._shadow.querySelector("#ssc-exc-range-from");
+    const toEl = this._shadow.querySelector("#ssc-exc-range-to");
+    const noteEl = this._shadow.querySelector("#ssc-exc-range-note");
+    if (!fromEl || !toEl) return;
+    const typeSel = this._shadow.querySelector("#ssc-exc-range-type");
+    const exType = typeSel ? typeSel.value : "free";
+    const data = {
+      child_name: this._childName,
+      start_date: fromEl.value,
+      end_date: toEl.value,
+      exception_type: exType,
+      note: noteEl ? (noteEl.value || "") : "",
+    };
+    if (exType === "partial") {
+      const untilEl = this._shadow.querySelector("#ssc-exc-range-until");
+      const until = untilEl ? parseInt(untilEl.value, 10) : NaN;
+      if (isNaN(until) || until < 1 || until > 12) return;
+      data.until_lesson = until;
+    }
+    if (!data.start_date || !data.end_date) return;
+    this._hass.callService("school_schedule", "mark_date_exception_range", data);
+    this._excRange = false;
+    this._render();
+  }
+
+  _deleteException(dateIso) {
+    if (!dateIso) return;
+    this._hass.callService("school_schedule", "unmark_date_exception", {
+      child_name: this._childName,
+      date: dateIso,
+    });
+    this._excDelete = null;
+    this._render();
+  }
+
   _openAddForm(weekday) {
     if (!weekday || weekday === "saturday" || weekday === "sunday") {
       weekday = "monday";
@@ -1468,6 +1645,8 @@ class SchoolScheduleCard extends HTMLElement {
     }
 
     const sickBannerHtml = (this._today && this._sick) ? this._renderSickBanner() : "";
+    // v2.7.3: date exception banner (free/partial today or tomorrow)
+    const excBannerHtml = this._renderExcBanner();
 
     const progressHtml = this._today ? this._renderProgressSection() : "";
 
@@ -1480,6 +1659,10 @@ class SchoolScheduleCard extends HTMLElement {
     const actionsHtml = '<div class="ssc-actions">' +
       '<button class="ssc-btn' + (this._holidayMode ? " ssc-btn-active" : "") + '" data-action="toggle-holiday" title="' + this._t("loading_holidays").replace("...", "") + '">' +
         '<ha-icon icon="mdi:beach" style="--mdc-icon-size:16px"></ha-icon>' +
+      '</button>' +
+      // v2.7.3: date exception manager (Klassenfahrt, Schulfest, Halbtag)
+      '<button class="ssc-btn' + (this._excModal ? " ssc-btn-active" : "") + '" data-action="open-exc-modal" title="' + this._t("exc_modal_title") + '">' +
+        '<ha-icon icon="mdi:calendar-remove" style="--mdc-icon-size:16px"></ha-icon>' +
       '</button>' +
       '<button class="ssc-btn" data-action="toggle-view">' +
         '<ha-icon icon="' + viewBtnIcon + '" style="--mdc-icon-size:16px"></ha-icon>' +
@@ -1506,6 +1689,8 @@ class SchoolScheduleCard extends HTMLElement {
     const confirmHtml = this._renderConfirmDelete();
     const sickModalHtml = this._renderSickModal();
     const cancelDialogHtml = this._renderCancelDialog();
+    // v2.7.3: date exception manager modal
+    const excModalHtml = this._renderExcModal();
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
     const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
@@ -1530,6 +1715,7 @@ class SchoolScheduleCard extends HTMLElement {
           childSwitchHtml +
           heroHtml +
           sickBannerHtml +
+          excBannerHtml +
           progressHtml +
           '<div class="content-scroll">' + contentHtml + '</div>' +
         '</div>' +
@@ -1537,6 +1723,7 @@ class SchoolScheduleCard extends HTMLElement {
         confirmHtml +
         sickModalHtml +
         cancelDialogHtml +
+        excModalHtml +
       '</ha-card>';
 
     if (this._today && this._progress) {
@@ -1701,6 +1888,192 @@ class SchoolScheduleCard extends HTMLElement {
     bodyHtml += '</div>';
 
     return '<div class="grid day-view"><div class="day day-active">' + headerHtml + bodyHtml + '</div></div>';
+  }
+
+  // v2.7.3: date exception banner — premium warning design like the sick
+  // banners; free exceptions win over partial (the more severe state).
+  _renderExcBanner() {
+    const sEntity = this._findEntity("schulfrei");
+    const attrs = sEntity ? (sEntity.attributes || {}) : {};
+    const today = attrs.exception_today || null;
+    const tomorrow = attrs.exception_tomorrow || null;
+    if (today && today.exception_type === "free") {
+      return '<div class="sick-banner sick-banner-exc-free" data-action="open-exc-modal">' +
+        '<ha-icon icon="mdi:bus-school" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("exc_banner_free") + (today.note ? " \u00b7 " + this._escHtml(today.note) : "") + '</span>' +
+      '</div>';
+    }
+    if (today && today.exception_type === "partial") {
+      return '<div class="sick-banner sick-banner-exc-partial" data-action="open-exc-modal">' +
+        '<ha-icon icon="mdi:weather-sunset" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("exc_banner_partial") + " \u2014 " + this._t("lesson_short") + " " + (today.until_lesson || "?") + (today.note ? " \u00b7 " + this._escHtml(today.note) : "") + '</span>' +
+      '</div>';
+    }
+    if (tomorrow && tomorrow.exception_type === "free") {
+      return '<div class="sick-banner sick-banner-exc-free" data-action="open-exc-modal">' +
+        '<ha-icon icon="mdi:bus-school" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("exc_banner_tomorrow_free") + (tomorrow.note ? " \u00b7 " + this._escHtml(tomorrow.note) : "") + '</span>' +
+      '</div>';
+    }
+    if (tomorrow && tomorrow.exception_type === "partial") {
+      return '<div class="sick-banner sick-banner-exc-partial" data-action="open-exc-modal">' +
+        '<ha-icon icon="mdi:weather-sunset" style="--mdc-icon-size:18px"></ha-icon>' +
+        '<span>' + this._t("exc_banner_tomorrow_partial") + " \u2014 " + this._t("lesson_short") + " " + (tomorrow.until_lesson || "?") + (tomorrow.note ? " \u00b7 " + this._escHtml(tomorrow.note) : "") + '</span>' +
+      '</div>';
+    }
+    return "";
+  }
+
+  // v2.7.3: date exception manager modal (Kranken-Modal-Pattern: quick
+  // buttons + range form + editable list with 2-click delete)
+  _renderExcModal() {
+    if (!this._excModal) return "";
+    const todayIso = this._isoDate("today");
+    const tomorrowIso = this._isoDate("tomorrow");
+    // Pure render: never mutate state here — a missing form state falls
+    // back to a LOCAL default object (see the v273 sim test 7 regression).
+    const ex = this._excException || {
+      date_iso: todayIso,
+      exception_type: "free",
+      note: "",
+      until_lesson: null,
+    };
+    const isFree = ex.exception_type !== "partial";
+
+    // Range form (Von-Bis)
+    let rangeHtml = "";
+    if (this._excRange) {
+      rangeHtml = '<div class="sick-range-form">' +
+        '<div class="sick-history-title">' + this._t("exc_range_title") + '</div>' +
+        '<div class="ssc-field-row">' +
+          '<div class="ssc-field">' +
+            '<span class="ssc-field-label">' + this._t("exc_range_from") + '</span>' +
+            '<input class="ssc-input" type="date" id="ssc-exc-range-from" value="' + todayIso + '" />' +
+          '</div>' +
+          '<div class="ssc-field">' +
+            '<span class="ssc-field-label">' + this._t("exc_range_to") + '</span>' +
+            '<input class="ssc-input" type="date" id="ssc-exc-range-to" value="' + todayIso + '" />' +
+          '</div>' +
+        '</div>' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("exc_type_partial") + ' (free / partial)</span>' +
+          '<select class="ssc-input" id="ssc-exc-range-type">' +
+            '<option value="free"' + (isFree ? " selected" : "") + '>' + this._t("exc_type_free") + '</option>' +
+            '<option value="partial"' + (!isFree ? " selected" : "") + '>' + this._t("exc_type_partial") + '</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="ssc-field" id="ssc-exc-range-until-field"' + (isFree ? ' style="display:none"' : "") + '>' +
+          '<span class="ssc-field-label">' + this._t("exc_type_partial") + ' (1-12)</span>' +
+          '<input class="ssc-input" type="number" min="1" max="12" id="ssc-exc-range-until" value="4" />' +
+        '</div>' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("exc_note") + '</span>' +
+          '<input class="ssc-input" type="text" id="ssc-exc-range-note" placeholder="' + this._escAttr(this._t("exc_note_ph")) + '" />' +
+        '</div>' +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="exc-range-cancel">' + this._t("cancel") + '</button>' +
+          '<button class="ssc-btn ssc-btn-save" data-action="exc-range-save">' + this._t("exc_range_btn") + '</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    // Editable list
+    const entries = Array.isArray(this._exceptions) ? this._exceptions.slice() : [];
+    let listHtml = "";
+    if (entries.length > 0) {
+      const itemsHtml = entries.map(function(entry) {
+        const d = entry.date || "";
+        const note = entry.note || "";
+        const isPartial = entry.exception_type === "partial";
+        const typeLabel = isPartial
+          ? this._t("exc_type_partial") + " " + (entry.until_lesson || "?")
+          : this._t("exc_type_free");
+        const badge = d === todayIso
+          ? '<span class="sick-entry-badge sick-entry-badge-today">' + this._t("exc_today_badge") + '</span>'
+          : (d === tomorrowIso
+            ? '<span class="sick-entry-badge sick-entry-badge-planned">' + this._t("sick_planned_badge") + '</span>'
+            : (d > todayIso
+              ? '<span class="sick-entry-badge sick-entry-badge-planned">' + this._t("exc_planned_badge") + '</span>'
+              : ""));
+        const isDeleting = this._excDelete === d;
+        let rowActionHtml = "";
+        if (isDeleting) {
+          rowActionHtml =
+            '<div class="sick-entry-edit-row">' +
+              '<span class="sick-delete-confirm-text">' + this._t("exc_delete_confirm") + '</span>' +
+              '<button class="sick-icon-btn sick-icon-btn-danger" data-action="exc-delete-confirm-yes" data-date="' + d + '"><ha-icon icon="mdi:check" style="--mdc-icon-size:16px"></ha-icon></button>' +
+              '<button class="sick-icon-btn" data-action="exc-delete-confirm-no" title="' + this._t("cancel") + '"><ha-icon icon="mdi:close" style="--mdc-icon-size:16px"></ha-icon></button>' +
+            '</div>';
+        } else {
+          rowActionHtml =
+            '<div class="sick-entry-actions">' +
+              '<button class="sick-icon-btn sick-icon-btn-danger" data-action="exc-delete" data-date="' + d + '" title="' + this._t("sick_delete_btn") + '"><ha-icon icon="mdi:delete" style="--mdc-icon-size:14px"></ha-icon></button>' +
+            '</div>';
+        }
+        return '<div class="sick-entry' + (isDeleting ? " sick-entry-active" : "") + '">' +
+          '<div class="sick-entry-main">' +
+            '<span class="sick-entry-date">' + d + '</span>' +
+            '<span class="ssc-exc-type">' + typeLabel + '</span>' +
+            badge +
+            (note ? '<span class="sick-entry-note">' + this._escHtml(note) + '</span>' : "") +
+          '</div>' +
+          rowActionHtml +
+        '</div>';
+      }.bind(this)).join("");
+      listHtml = '<div class="sick-history-title">' + this._t("exc_list_title") + ' <span class="sick-list-count">(' + entries.length + ')</span></div>' +
+        '<div class="sick-entry-list">' + itemsHtml + '</div>';
+    } else {
+      listHtml = '<div class="sick-history-title">' + this._t("exc_list_title") + '</div>' +
+        '<div class="sick-history-empty">' + this._t("exc_list_empty") + '</div>';
+    }
+
+    // Type buttons + date/note/until form
+    const formHtml = '<div class="sick-action-row">' +
+        '<button class="sick-btn' + (isFree ? " sick-btn-active" : "") + '" data-action="exc-type-free">' +
+          '<ha-icon icon="mdi:bus-school" style="--mdc-icon-size:18px"></ha-icon>' +
+          '<span>' + this._t("exc_type_free") + '</span>' +
+        '</button>' +
+        '<button class="sick-btn' + (!isFree ? " sick-btn-active" : "") + '" data-action="exc-type-partial">' +
+          '<ha-icon icon="mdi:weather-sunset" style="--mdc-icon-size:18px"></ha-icon>' +
+          '<span>' + this._t("exc_type_partial") + '</span>' +
+        '</button>' +
+      '</div>' +
+      '<div class="ssc-field-row">' +
+        '<div class="ssc-field">' +
+          '<span class="ssc-field-label">' + this._t("exc_date") + '</span>' +
+          '<input class="ssc-input" type="date" data-action="exc-date-change" value="' + (ex.date_iso || todayIso) + '" />' +
+        '</div>' +
+        (!isFree
+          ? '<div class="ssc-field">' +
+              '<span class="ssc-field-label">' + this._t("exc_type_partial") + ' (1-12)</span>' +
+              '<input class="ssc-input" type="number" min="1" max="12" data-action="exc-until-change" value="' + (ex.until_lesson || 4) + '" />' +
+            '</div>'
+          : "") +
+      '</div>' +
+      '<div class="ssc-field">' +
+        '<span class="ssc-field-label">' + this._t("exc_note") + '</span>' +
+        '<input class="ssc-input" type="text" data-action="exc-note-input" placeholder="' + this._escAttr(this._t("exc_note_ph")) + '" value="' + this._escAttr(ex.note || "") + '" />' +
+      '</div>';
+
+    return '<div class="ssc-modal-overlay" data-action="exc-bg">' +
+      '<div class="ssc-form-card ssc-exc-card">' +
+        '<div class="ssc-form-title">' + this._t("exc_modal_title") + '</div>' +
+        '<div class="ssc-form-day">' + this._t("exc_modal_sub") + '</div>' +
+        formHtml +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn ssc-btn-save" data-action="exc-save">' + this._t("exc_save") + '</button>' +
+        '</div>' +
+        '<button class="sick-btn sick-btn-range" data-action="exc-range-toggle">' +
+          '<ha-icon icon="mdi:calendar-range" style="--mdc-icon-size:18px"></ha-icon>' +
+          '<span>' + this._t("exc_range_title") + '</span>' +
+        '</button>' +
+        rangeHtml +
+        listHtml +
+        '<div class="ssc-form-buttons">' +
+          '<button class="ssc-btn" data-action="exc-close">' + this._t("cancel") + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
   }
 
   // v2.7.2: lesson cancellation dialog (edit mode)
@@ -2668,6 +3041,28 @@ _getSickHistory() {
       .lc-break .lc-rail {
         opacity: 0.4;
       }
+      /* v2.7.3: date exception banners (Tages-Ausnahmen) */
+      .sick-banner-exc-free {
+        background: linear-gradient(135deg, rgba(124,77,255,0.22), rgba(41,182,246,0.18));
+        border: 1px solid rgba(124,77,255,0.45);
+      }
+      .sick-banner-exc-free ha-icon { color:#7c4dff; }
+      .sick-banner-exc-partial {
+        background: linear-gradient(135deg, rgba(255,183,77,0.20), rgba(255,112,67,0.16));
+        border: 1px solid rgba(255,183,77,0.45);
+      }
+      .sick-banner-exc-partial ha-icon { color:#ffb74d; }
+      .ssc-exc-type {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--secondary-text-color, rgba(255,255,255,0.7));
+        background: rgba(124,77,255,0.14);
+        border: 1px solid rgba(124,77,255,0.25);
+        padding: 1px 8px;
+        border-radius: 10px;
+        white-space: nowrap;
+      }
+
       /* v2.7.2: cancelled lessons (Einzelstunden-Ausfall) */
       .lc-cancelled {
         border-style: dashed !important;
@@ -3122,6 +3517,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.7.2",
+  description: "Stundenplan-Karte Ultra Premium v2.7.3",
   preview: false,
 });

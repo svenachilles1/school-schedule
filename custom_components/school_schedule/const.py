@@ -143,6 +143,9 @@ STATUS_SCHOOL_DAY: Final[str] = "school_day"
 STATUS_VACATION: Final[str] = "vacation"
 STATUS_PUBLIC_HOLIDAY: Final[str] = "public_holiday"
 STATUS_WEEKEND: Final[str] = "weekend"
+# v2.7.3: kind-specific free date exception (Klassenfahrt, Schulfest) —
+# wins over vacation/public holiday/weekend in effective_day_status.
+STATUS_DATE_EXCEPTION: Final[str] = "date_exception"
 
 # ─── Absences / sick days (v2.6.0) ────────────────────────────────────
 CONF_ABSENCES: Final[str] = "absences"
@@ -198,6 +201,40 @@ SERVICE_UNMARK_LESSON_CANCELLED: Final[str] = "unmark_lesson_cancelled"
 # for its own date; 60 days of history is plenty for "was fiel letzte
 # Woche aus" while keeping entry.data small.
 CANCELLATION_RETENTION_DAYS: Final[int] = 60
+
+# ─── Date exceptions (v2.7.3 — Datum-basierte Ausnahmen) ──────────────
+CONF_DATE_EXCEPTIONS: Final[str] = "date_exceptions"
+
+# Exception types. A date exception is kind-specific and overrides the
+# generic day status for exactly its date:
+#   free    — whole day without lessons (Klassenfahrt, Schulfest, Ausflug)
+#   partial — half day / changed plan: lessons 1..until_lesson take place,
+#             everything after is cancelled for this date (Zeugnis-Ausgabe)
+# A "free" day deliberately does NOT count as an absence (not a sick day);
+# the Fehltage counters and the attest streak stay untouched.
+EXCEPTION_TYPE_FREE: Final[str] = "free"
+EXCEPTION_TYPE_PARTIAL: Final[str] = "partial"
+
+# Service names (date exceptions)
+SERVICE_MARK_DATE_EXCEPTION: Final[str] = "mark_date_exception"
+SERVICE_MARK_DATE_EXCEPTION_RANGE: Final[str] = "mark_date_exception_range"
+SERVICE_UNMARK_DATE_EXCEPTION: Final[str] = "unmark_date_exception"
+
+# Service fields (date exceptions)
+ATTR_EXCEPTION_TYPE: Final[str] = "exception_type"
+ATTR_UNTIL_LESSON: Final[str] = "until_lesson"
+ATTR_START_DATE: Final[str] = "start_date"
+ATTR_END_DATE: Final[str] = "end_date"
+
+# v2.7.3: sane upper bound for an exception range (Klassenfahrten are
+# multi-day by nature) — a typo like a wrong year must not silently
+# create a decade of entries (same guard philosophy as mark_sick_range).
+EXCEPTION_RANGE_MAX_DAYS: Final[int] = 366
+
+# Exception entries older than N days (relative to their own date) are
+# pruned on coordinator refresh. Historical exceptions have no rendering
+# value; 365 days covers a full school year like absences.
+EXCEPTION_RETENTION_DAYS: Final[int] = 365
 
 # Binary sensor types
 BSENSOR_SCHULFREI: Final[str] = "schulfrei"

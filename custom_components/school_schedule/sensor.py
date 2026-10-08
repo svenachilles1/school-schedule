@@ -363,6 +363,10 @@ class AbsenceSensor(SchoolScheduleEntity, SensorEntity):
             "cancelled_today",
             "cancelled_tomorrow",
             "upcoming_cancellations",
+            # v2.7.3: date exceptions for the card's exception manager
+            # (editable list — past entries included so deleting a wrong
+            # entry is possible)
+            "date_exceptions",
         ):
             if key in data:
                 attrs[key] = data[key]

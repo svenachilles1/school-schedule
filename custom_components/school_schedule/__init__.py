@@ -25,6 +25,10 @@ from .const import (
     SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY,
     SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, ATTR_DATE, ATTR_NOTE,
     SERVICE_MARK_LESSON_CANCELLED, SERVICE_UNMARK_LESSON_CANCELLED,
+    SERVICE_MARK_DATE_EXCEPTION, SERVICE_MARK_DATE_EXCEPTION_RANGE,
+    SERVICE_UNMARK_DATE_EXCEPTION,
+    EXCEPTION_TYPE_FREE, EXCEPTION_TYPE_PARTIAL, ATTR_EXCEPTION_TYPE,
+    ATTR_UNTIL_LESSON, ATTR_START_DATE, ATTR_END_DATE,
 )
 from .coordinator import SchoolScheduleCoordinator
 from .card_resource import async_setup_card_resource
@@ -123,6 +127,32 @@ UNMARK_LESSON_CANCELLED_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("date"): cv.string,
     vol.Required("lesson_number"): vol.Coerce(int),
+})
+
+# v2.7.3: date exceptions (Datum-basierte Ausnahmen — Klassenfahrt,
+# Schulfest, Halbtag). ``free`` = whole day off for this child;
+# ``partial`` = half day, lessons 1..until_lesson take place, the rest
+# is cancelled for that date. Optional note carries the reason.
+MARK_DATE_EXCEPTION_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("date"): cv.string,
+    vol.Required("exception_type"): vol.In([EXCEPTION_TYPE_FREE, EXCEPTION_TYPE_PARTIAL]),
+    vol.Optional("note", default=""): cv.string,
+    vol.Optional("until_lesson"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+})
+
+MARK_DATE_EXCEPTION_RANGE_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("start_date"): cv.string,
+    vol.Required("end_date"): cv.string,
+    vol.Required("exception_type"): vol.In([EXCEPTION_TYPE_FREE, EXCEPTION_TYPE_PARTIAL]),
+    vol.Optional("note", default=""): cv.string,
+    vol.Optional("until_lesson"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+})
+
+UNMARK_DATE_EXCEPTION_SCHEMA = vol.Schema({
+    vol.Required("child_name"): cv.string,
+    vol.Required("date"): cv.string,
 })
 
 
@@ -425,6 +455,101 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     f"Lesson #{lesson_number} on {day.isoformat()} was not cancelled for {child_name}"
                 )
 
+        async def handle_mark_date_exception(call: ServiceCall) -> None:
+            """Handle mark_date_exception service call (v2.7.3)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_required_date(call.data.get("date"))
+            exception_type = str(call.data["exception_type"])
+            note = str(call.data.get("note", "") or "")
+
+            if exception_type not in (EXCEPTION_TYPE_FREE, EXCEPTION_TYPE_PARTIAL):
+                raise HomeAssistantError(
+                    f"Invalid exception_type {exception_type!r} — use 'free' or 'partial'"
+                )
+
+            # Guard 1: partial needs until_lesson, free forbids it.
+            until_lesson = call.data.get("until_lesson")
+            if exception_type == EXCEPTION_TYPE_PARTIAL:
+                if until_lesson is None:
+                    raise HomeAssistantError(
+                        "partial needs until_lesson (1-12) — the last lesson that still takes place"
+                    )
+            else:  # free
+                until_lesson = None
+
+            # Guard 2: the date must be a school weekday — a Saturday or
+            # Sunday date is a typo/user error, silently storing it would
+            # produce an exception nothing ever renders (same discipline
+            # as the v2.7.2 weekend guard). Vacation/holiday days MAY be
+            # excepted: a kind-specific trip day inside a state-wide
+            # vacation week is the exception's whole point.
+            if day.weekday() >= 5:
+                raise HomeAssistantError(
+                    f"{day.isoformat()} is a weekend day — there are no lessons to except"
+                )
+
+            await coordinator.mark_date_exception(
+                day, exception_type, note, until_lesson
+            )
+
+        async def handle_mark_date_exception_range(call: ServiceCall) -> None:
+            """Handle mark_date_exception_range service call (v2.7.3)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            start = _parse_required_date(call.data.get("start_date"))
+            end = _parse_required_date(call.data.get("end_date"))
+            exception_type = str(call.data["exception_type"])
+            note = str(call.data.get("note", "") or "")
+
+            if exception_type not in (EXCEPTION_TYPE_FREE, EXCEPTION_TYPE_PARTIAL):
+                raise HomeAssistantError(
+                    f"Invalid exception_type {exception_type!r} — use 'free' or 'partial'"
+                )
+            until_lesson = call.data.get("until_lesson")
+            if exception_type == EXCEPTION_TYPE_PARTIAL:
+                if until_lesson is None:
+                    raise HomeAssistantError(
+                        "partial needs until_lesson (1-12) — the last lesson that still takes place"
+                    )
+            else:  # free
+                until_lesson = None
+
+            # Weekend days INSIDE a range are stored without complaint
+            # (Klassenfahrt ranges span weekends; rendering ignores days
+            # without lessons anyway) — splitting ranges around weekends
+            # would be busywork for the user. until_lesson applies to
+            # every school day in the range.
+            try:
+                added = await coordinator.mark_date_exception_range(
+                    start, end, exception_type, note, until_lesson
+                )
+            except ValueError as err:
+                if "start_after_end" in str(err):
+                    raise HomeAssistantError(
+                        f"Start date {start.isoformat()} is after end date {end.isoformat()} — swap them"
+                    ) from err
+                if "range_too_long" in str(err):
+                    raise HomeAssistantError(
+                        f"Range {start.isoformat()}..{end.isoformat()} is too long (max 366 days)"
+                    ) from err
+                raise HomeAssistantError(str(err)) from err
+            if added == 0:
+                raise HomeAssistantError(
+                    f"{start.isoformat()}..{end.isoformat()} already fully marked for {child_name} (same type and note)"
+                )
+
+        async def handle_unmark_date_exception(call: ServiceCall) -> None:
+            """Handle unmark_date_exception service call (v2.7.3)."""
+            child_name = call.data["child_name"]
+            coordinator = _find_coordinator(hass, child_name)
+            day = _parse_required_date(call.data.get("date"))
+            removed = await coordinator.unmark_date_exception(day)
+            if not removed:
+                raise HomeAssistantError(
+                    f"No date exception on {day.isoformat()} for {child_name}"
+                )
+
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
@@ -436,6 +561,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_SICK_DAY, handle_update_sick_day, schema=UPDATE_SICK_DAY_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_MARK_LESSON_CANCELLED, handle_mark_lesson_cancelled, schema=MARK_LESSON_CANCELLED_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UNMARK_LESSON_CANCELLED, handle_unmark_lesson_cancelled, schema=UNMARK_LESSON_CANCELLED_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_MARK_DATE_EXCEPTION, handle_mark_date_exception, schema=MARK_DATE_EXCEPTION_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_MARK_DATE_EXCEPTION_RANGE, handle_mark_date_exception_range, schema=MARK_DATE_EXCEPTION_RANGE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_UNMARK_DATE_EXCEPTION, handle_unmark_date_exception, schema=UNMARK_DATE_EXCEPTION_SCHEMA)
         _LOGGER.info("School Schedule services registered")
 
     return True
@@ -462,7 +590,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if isinstance(v, SchoolScheduleCoordinator)
         ]
         if not remaining:
-            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, SERVICE_MARK_LESSON_CANCELLED, SERVICE_UNMARK_LESSON_CANCELLED]:
+            for service in [SERVICE_ADD_LESSON, SERVICE_REMOVE_LESSON, SERVICE_UPDATE_LESSON, SERVICE_GET_SCHEDULE, SERVICE_SET_FEDERAL_STATE, SERVICE_MARK_SICK_DAY, SERVICE_UNMARK_SICK_DAY, SERVICE_MARK_SICK_RANGE, SERVICE_UPDATE_SICK_DAY, SERVICE_MARK_LESSON_CANCELLED, SERVICE_UNMARK_LESSON_CANCELLED, SERVICE_MARK_DATE_EXCEPTION, SERVICE_MARK_DATE_EXCEPTION_RANGE, SERVICE_UNMARK_DATE_EXCEPTION]:
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
 

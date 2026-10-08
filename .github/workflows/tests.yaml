@@ -64,6 +64,15 @@ jobs:
       - name: Unit tests (cancellation logic)
         run: |
           python3 tests/test_cancellation_logic.py
+      - name: Unit tests (date exception logic)
+        run: |
+          python3 tests/test_date_exception_logic.py
+      - name: Card flow simulation (v2.7.2 cancellations)
+        run: |
+          node tests/card_flow_sim_v272.js
+      - name: Card flow simulation (v2.7.3 date exceptions)
+        run: |
+          node tests/card_flow_sim_v273.js
       - name: Unit tests (break count)
         run: |
           python3 tests/test_count_real_lessons.py

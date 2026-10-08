@@ -34,8 +34,12 @@ from .const import (
     CONF_WEEKDAY,
     WEEKDAY_MAP,
 )
-from .holiday_logic import STATUS_SCHOOL_DAY, day_status
+from .holiday_logic import STATUS_SCHOOL_DAY
 from .cancellation_logic import is_lesson_cancelled
+from .date_exception_logic import (
+    effective_cancellations,
+    effective_day_status,
+)
 
 # Safety net for the next-upcoming scan: must exceed the longest German
 # summer break (~6 weeks) with a wide margin. 400 days > 1 year.
@@ -118,6 +122,7 @@ def build_events(
     end_date: date,
     tz: Any,
     cancellations: list[dict[str, Any]] | None = None,
+    exceptions: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """All events whose interval overlaps [start_date, end_date] (inclusive).
 
@@ -130,6 +135,14 @@ def build_events(
     firing on it would lie. ``cancellations`` is the coordinator's
     normalised cancellation list; None keeps the old behaviour (used by
     the pure unit tests).
+
+    v2.7.3: date exceptions. Days with a ``free`` exception (Klassenfahrt,
+    Schulfest) are skipped entirely — same treatment as a vacation day.
+    ``partial`` days keep their lessons 1..until_lesson and derive
+    cancellations for the rest (merged with explicit cancellations,
+    explicit wins) so a half day shows exactly its real events.
+    ``exceptions`` is the coordinator's normalised exception list; None
+    keeps the old behaviour.
     """
     if end_date < start_date:
         return []
@@ -146,13 +159,30 @@ def build_events(
     events: list[dict[str, Any]] = []
     day = start_date
     while day <= end_date:
-        if day_status(day, periods)["status"] == STATUS_SCHOOL_DAY:
+        if effective_day_status(day, periods, exceptions or [])["status"] == STATUS_SCHOOL_DAY:
+            day_numbers: list[int] = []
             for lesson in grouped.get(day.weekday(), []):
-                # v2.7.2: skip cancelled occurrences for THIS date
+                raw_number = lesson.get(CONF_LESSON_NUMBER)
+                if raw_number is None:
+                    continue
+                try:
+                    day_numbers.append(int(raw_number))
+                except (TypeError, ValueError):
+                    continue
+            day_cancellations = (
+                effective_cancellations(
+                    cancellations or [], exceptions or [], day, day_numbers
+                )
+                if (cancellations is not None or exceptions is not None)
+                else None
+            )
+            for lesson in grouped.get(day.weekday(), []):
+                # v2.7.2/3: skip cancelled occurrences for THIS date —
+                # explicit AND exception-derived ones
                 if (
-                    cancellations is not None
+                    day_cancellations is not None
                     and is_lesson_cancelled(
-                        cancellations, day, lesson.get(CONF_LESSON_NUMBER)
+                        day_cancellations, day, lesson.get(CONF_LESSON_NUMBER)
                     )
                 ):
                     continue
@@ -172,6 +202,7 @@ def next_upcoming_event(
     periods: list[dict[str, Any]],
     now: datetime,
     cancellations: list[dict[str, Any]] | None = None,
+    exceptions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """The current or next event from ``now`` (local_calendar semantics).
 
@@ -181,6 +212,8 @@ def next_upcoming_event(
     - None when the schedule has no lessons at all.
     - v2.7.2: cancelled occurrences are skipped — the calendar state
       must never announce a lesson that was called off.
+    - v2.7.3: ``free`` exception days are skipped like vacation days;
+      on ``partial`` days the derived cancellations apply.
     """
     grouped = _lessons_by_weekday(lessons)
     if not grouped:
@@ -190,16 +223,32 @@ def next_upcoming_event(
     today = now.date()
     for offset in range(MAX_LOOKAHEAD_DAYS):
         day = today + timedelta(days=offset)
-        if day_status(day, periods)["status"] != STATUS_SCHOOL_DAY:
+        if effective_day_status(day, periods, exceptions or [])["status"] != STATUS_SCHOOL_DAY:
             continue
         day_lessons = grouped.get(day.weekday(), [])
         if not day_lessons:
             continue
+        day_numbers: list[int] = []
+        for lesson in day_lessons:
+            raw_number = lesson.get(CONF_LESSON_NUMBER)
+            if raw_number is None:
+                continue
+            try:
+                day_numbers.append(int(raw_number))
+            except (TypeError, ValueError):
+                continue
+        day_cancellations = (
+            effective_cancellations(
+                cancellations or [], exceptions or [], day, day_numbers
+            )
+            if (cancellations is not None or exceptions is not None)
+            else None
+        )
         for lesson in day_lessons:
             if (
-                cancellations is not None
+                day_cancellations is not None
                 and is_lesson_cancelled(
-                    cancellations, day, lesson.get(CONF_LESSON_NUMBER)
+                    day_cancellations, day, lesson.get(CONF_LESSON_NUMBER)
                 )
             ):
                 continue
