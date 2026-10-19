@@ -163,7 +163,7 @@ child_name: Tom
 | `school_schedule.add_lesson` | Add a lesson to a child's schedule |
 | `school_schedule.remove_lesson` | Remove a lesson by weekday and lesson number |
 | `school_schedule.update_lesson` | Update an existing lesson (optional `lesson_uid` for unambiguous addressing) |
-| `school_schedule.get_schedule` | Get the schedule for a specific day or all days |
+| `school_schedule.get_schedule` | Get the schedule for a specific day or all days — **returns the schedule as a service response** (`supports_response=ONLY`) |
 
 ## Sensors
 
