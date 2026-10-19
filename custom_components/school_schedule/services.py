@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
@@ -40,6 +41,19 @@ from .coordinator import SchoolScheduleCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# v2.7.5: security review — color must be strict hex, icon a valid icon
+# reference; both end up in card HTML (style / icon attributes).
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _hex_color(value: Any) -> str:
+    """Validate a #rrggbb hex color (v2.7.5 security review)."""
+    value = str(value).strip()
+    if not _HEX_COLOR_RE.match(value):
+        raise vol.Invalid(f"Invalid color {value!r} — expected hex format like #44739e")
+    return value
+
+
 ADD_LESSON_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CHILD_NAME): cv.string,
@@ -50,8 +64,8 @@ ADD_LESSON_SCHEMA = vol.Schema(
         vol.Optional(ATTR_TEACHER, default=""): cv.string,
         vol.Required(ATTR_START_TIME): cv.string,
         vol.Required(ATTR_END_TIME): cv.string,
-        vol.Optional(ATTR_COLOR, default=DEFAULT_COLOR): cv.string,
-        vol.Optional(ATTR_ICON, default=DEFAULT_ICON): cv.string,
+        vol.Optional(ATTR_COLOR, default=DEFAULT_COLOR): _hex_color,
+        vol.Optional(ATTR_ICON, default=DEFAULT_ICON): cv.icon,
         vol.Optional(ATTR_IS_BREAK, default=False): cv.boolean,
         vol.Optional(ATTR_APPLY_TO_ALL_DAYS, default=False): cv.boolean,
     }
@@ -75,8 +89,8 @@ UPDATE_LESSON_SCHEMA = vol.Schema(
         vol.Optional(ATTR_TEACHER): cv.string,
         vol.Optional(ATTR_START_TIME): cv.string,
         vol.Optional(ATTR_END_TIME): cv.string,
-        vol.Optional(ATTR_COLOR): cv.string,
-        vol.Optional(ATTR_ICON): cv.string,
+        vol.Optional(ATTR_COLOR): _hex_color,
+        vol.Optional(ATTR_ICON): cv.icon,
         vol.Optional(ATTR_IS_BREAK): cv.boolean,
     }
 )
@@ -181,14 +195,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 f"Lesson {weekday} #{lesson_number} not found"
             )
 
-    async def handle_get_schedule(call: ServiceCall) -> None:
-        """Handle get_schedule service call."""
+    async def handle_get_schedule(call: ServiceCall) -> ServiceResponse:
+        """Handle get_schedule service call (v2.7.5: returns the schedule)."""
         child_name = call.data[ATTR_CHILD_NAME]
         coordinator = _find_coordinator(hass, child_name)
 
         weekday = call.data.get(ATTR_WEEKDAY)
-        schedule = coordinator.get_schedule(weekday)
-        _LOGGER.info("Schedule for %s: %s", child_name, schedule)
+        return {
+            "child_name": child_name,
+            "schedule": coordinator.get_schedule(weekday),
+        }
 
     hass.services.async_register(
         DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA
@@ -200,7 +216,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA
     )
     hass.services.async_register(
-        DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA
+        DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
 
 

@@ -906,11 +906,11 @@ class SchoolScheduleCard extends HTMLElement {
     const todayStr = new Date().toISOString().slice(0, 10);
     const currentHoliday = this._isInHoliday(todayStr);
     if (currentHoliday) {
-      html += '<div class="holiday-current"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:28px;color:#ff9800"></ha-icon></div><div class="holiday-current-text"><div class="holiday-current-name">' + currentHoliday.name + '</div><div class="holiday-current-dates">' + this._formatDate(currentHoliday.starts_on) + " " + this._t("to") + " " + this._formatDate(currentHoliday.ends_on) + '</div></div></div>';
+      html += '<div class="holiday-current"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:28px;color:#ff9800"></ha-icon></div><div class="holiday-current-text"><div class="holiday-current-name">' + this._escHtml(currentHoliday.name) + '</div><div class="holiday-current-dates">' + this._formatDate(currentHoliday.starts_on) + " " + this._t("to") + " " + this._formatDate(currentHoliday.ends_on) + '</div></div></div>';
     }
     html += '<div class="holiday-list">';
     for (const h of this._holidayData) {
-      html += '<div class="holiday-item"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:18px;color:#ff9800;opacity:0.7"></ha-icon></div><div class="holiday-item-info"><div class="holiday-item-name">' + h.name + '</div><div class="holiday-item-dates">' + this._formatDate(h.starts_on) + " \u2013 " + this._formatDate(h.ends_on) + '</div></div></div>';
+      html += '<div class="holiday-item"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:18px;color:#ff9800;opacity:0.7"></ha-icon></div><div class="holiday-item-info"><div class="holiday-item-name">' + this._escHtml(h.name) + '</div><div class="holiday-item-dates">' + this._formatDate(h.starts_on) + " \u2013 " + this._formatDate(h.ends_on) + '</div></div></div>';
     }
     html += '</div>';
     return html;
@@ -1509,7 +1509,7 @@ class SchoolScheduleCard extends HTMLElement {
     let html = '<div class="ssc-child-switch">';
     for (const name of this._availableChildren) {
       html += '<button class="ssc-child-pill' + (name === this._childName ? " ssc-child-active" : "") +
-        '" data-action="switch-child" data-child="' + name + '" title="' + name + '">' + name + '</button>';
+        '" data-action="switch-child" data-child="' + this._escAttr(name) + '" title="' + this._escAttr(name) + '">' + this._escHtml(name) + '</button>';
     }
     return html + '</div>';
   }
@@ -1521,7 +1521,7 @@ class SchoolScheduleCard extends HTMLElement {
       return '<div class="hero-stat hero-holiday" data-action="toggle-holiday">' +
         '<div class="hero-stat-num" style="' + grad + '">' + cd.days + '</div>' +
         '<div class="hero-stat-label">' + this._t(cd.mode === "current" ? "holiday_days_left" : "days_until_holiday") + '</div>' +
-        '<div class="hero-holiday-name" title="' + cd.name + '">' + cd.name + '</div>' +
+        '<div class="hero-holiday-name" title="' + this._escAttr(cd.name) + '">' + this._escHtml(cd.name) + '</div>' +
       '</div>';
     }
     return '<div class="hero-stat hero-holiday" data-action="toggle-holiday" title="' + this._t("choose_state") + '">' +
@@ -1698,19 +1698,19 @@ class SchoolScheduleCard extends HTMLElement {
         : "var(--primary-color, #7c4dff)";
 
       heroPills += '<div class="hero-stat">' +
-        '<div class="hero-stat-num" style="background:linear-gradient(135deg,' + heroGrad + ',' + this._rgba(heroGrad.startsWith("#") ? heroGrad : "#7c4dff", 0.5) + ');-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">' + totalToday + '</div>' +
+        '<div class="hero-stat-num" style="background:linear-gradient(135deg,' + this._escAttr(heroGrad) + ',' + this._rgba(heroGrad.startsWith("#") ? heroGrad : "#7c4dff", 0.5) + ');-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">' + totalToday + '</div>' +
         '<div class="hero-stat-label">' + this._t("lessons_today") + '</div>' +
       '</div>';
 
       if (currentLesson) {
         const c = this._getColor(currentLesson);
-        heroPills += '<div class="hero-now" style="--now-c:' + c + ';--now-c20:' + this._rgba(c, 0.2) + ';--now-c10:' + this._rgba(c, 0.1) + '">' +
+        heroPills += '<div class="hero-now" style="--now-c:' + this._escAttr(c) + ';--now-c20:' + this._rgba(c, 0.2) + ';--now-c10:' + this._rgba(c, 0.1) + '">' +
           '<div class="hero-now-pulse"></div>' +
           '<div class="hero-now-info">' +
             '<div class="hero-now-label">' + this._t("now_upper") + '</div>' +
-            '<div class="hero-now-subject">' + currentLesson.subject + '</div>' +
+            '<div class="hero-now-subject">' + this._escHtml(currentLesson.subject) + '</div>' +
             '<div class="hero-now-time">' + (currentLesson.start_time || "").slice(0,5) + " - " + (currentLesson.end_time || "").slice(0,5) + '</div>' +
-            '<div class="hero-now-room">' + (currentLesson.room || "") + '</div>' +
+            '<div class="hero-now-room">' + this._escHtml(currentLesson.room || "") + '</div>' +
           '</div>' +
         '</div>';
       } else {
@@ -1722,9 +1722,9 @@ class SchoolScheduleCard extends HTMLElement {
 
       if (nextLesson) {
         const c = this._getColor(nextLesson);
-        heroPills += '<div class="hero-next" style="--next-c:' + c + ';--next-c15:' + this._rgba(c, 0.15) + '">' +
+        heroPills += '<div class="hero-next" style="--next-c:' + this._escAttr(c) + ';--next-c15:' + this._rgba(c, 0.15) + '">' +
           '<div class="hero-next-label">' + this._t("next_upper") + '</div>' +
-          '<div class="hero-next-subject">' + nextLesson.subject + '</div>' +
+          '<div class="hero-next-subject">' + this._escHtml(nextLesson.subject) + '</div>' +
           '<div class="hero-next-time">' + (nextLesson.start_time || "").slice(0,5) + " - " + (nextLesson.end_time || "").slice(0,5) + '</div>' +
         '</div>';
       } else {
@@ -1854,15 +1854,15 @@ class SchoolScheduleCard extends HTMLElement {
 
     let details = "";
     if (!isBreak) {
-    if (lesson.room) details += '<span class="lc-room">' + lesson.room + '</span>';
-    if (lesson.teacher) details += '<span class="lc-teacher">' + lesson.teacher + '</span>';
+    if (lesson.room) details += '<span class="lc-room">' + this._escHtml(lesson.room) + '</span>';
+    if (lesson.teacher) details += '<span class="lc-teacher">' + this._escHtml(lesson.teacher) + '</span>';
     }
 
     let numHtml;
     if (isBreak) {
       numHtml = '<ha-icon icon="mdi:coffee-off" style="--mdc-icon-size:16px"></ha-icon>';
     } else if (hasCustomIcon) {
-      numHtml = '<ha-icon icon="' + lessonIcon + '" style="--mdc-icon-size:15px"></ha-icon>';
+      numHtml = '<ha-icon icon="' + this._escAttr(lessonIcon) + '" style="--mdc-icon-size:15px"></ha-icon>';
     } else {
       numHtml = lessonNum;
     }
@@ -1892,12 +1892,12 @@ class SchoolScheduleCard extends HTMLElement {
     const cancelledNoteHtml = (isCancelled && lesson.cancelled_note)
       ? '<div class="lc-cancelled-note">' + this._escHtml(lesson.cancelled_note) + '</div>' : "";
 
-    return '<div class="' + cls + '" style="--c:' + color + ';--c05:' + c05 + ';--c10:' + c10 + ';--c20:' + c20 + ';--c30:' + c30 + ';--ctext:' + textColor + '">' +
+    return '<div class="' + cls + '" style="--c:' + this._escAttr(color) + ';--c05:' + c05 + ';--c10:' + c10 + ';--c20:' + c20 + ';--c30:' + c30 + ';--ctext:' + textColor + '">' +
       '<div class="lc-rail"></div>' +
       '<div class="lc-content">' +
         '<div class="lc-num">' + numHtml + '</div>' +
         '<div class="lc-info">' +
-          '<div class="lc-subject">' + (isCancelled ? "<s>" + lesson.subject + "</s>" : lesson.subject) + '</div>' +
+          '<div class="lc-subject">' + (isCancelled ? "<s>" + this._escHtml(lesson.subject) + "</s>" : this._escHtml(lesson.subject)) + '</div>' +
           '<div class="lc-time">' + (lesson.start_time || "").slice(0,5) + " - " + (lesson.end_time || "").slice(0,5) + '</div>' +
           (details ? '<div class="lc-details">' + details + '</div>' : "") +
           (cancelledBadgeHtml ? '<div class="lc-cancelled-row">' + cancelledBadgeHtml + '</div>' : "") +
@@ -2217,7 +2217,7 @@ class SchoolScheduleCard extends HTMLElement {
       '<div class="ssc-form-card ssc-cancel-card">' +
         '<div class="ssc-form-title">' + this._t("cancel_lesson_q") + '</div>' +
         '<div class="ssc-form-day">' +
-          (cd.subject ? cd.subject + " \u00b7 " : "") + dayName + ", " + cd.date_iso + " \u00b7 " +
+          (cd.subject ? this._escHtml(cd.subject) + " \u00b7 " : "") + dayName + ", " + cd.date_iso + " \u00b7 " +
           this._t("lesson_short") + " " + cd.lesson_number + " \u00b7 " + cd.start_time + "-" + cd.end_time +
         '</div>' +
         bodyHtml +
@@ -2343,7 +2343,7 @@ class SchoolScheduleCard extends HTMLElement {
           '<ha-icon icon="mdi:trash-can" style="--mdc-icon-size:36px;color:#f44336"></ha-icon>' +
         '</div>' +
         '<div class="ssc-confirm-text">' + this._t("delete_lesson_q") + '</div>' +
-        '<div class="ssc-confirm-subject">' + (cd.subject || this._t("unnamed")) + '</div>' +
+        '<div class="ssc-confirm-subject">' + this._escHtml(cd.subject || this._t("unnamed")) + '</div>' +
         '<div class="ssc-confirm-sub">' + (cd.dayName || "") + ", " + cd.start_time + " - " + cd.end_time + '</div>' +
         '<div class="ssc-form-buttons">' +
           '<button class="ssc-btn" data-action="cancel-delete">' + this._t("cancel") + '</button>' +

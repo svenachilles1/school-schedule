@@ -67,6 +67,12 @@ jobs:
       - name: Unit tests (date exception logic)
         run: |
           python3 tests/test_date_exception_logic.py
+      - name: Unit tests (service security / XSS hardening)
+        run: |
+          python3 tests/test_service_security.py
+      - name: Card XSS escape simulation (v2.7.5)
+        run: |
+          node tests/test_card_xss_v275.js
       - name: Card flow simulation (v2.7.2 cancellations)
         run: |
           node tests/card_flow_sim_v272.js

@@ -543,7 +543,10 @@ unmark_date_exception:
 
 get_schedule:
   name: Stundenplan abrufen
-  description: Ruft den Stundenplan für einen bestimmten Wochentag ab.
+  description: >-
+    Ruft den Stundenplan für einen bestimmten Wochentag ab — oder den
+    gesamten Wochenplan ohne Wochentag. Der Stundenplan wird als
+    Service-Response zurückgegeben (z. B. für Skripte und Automationen).
   fields:
     child_name:
       name: Name des Kindes

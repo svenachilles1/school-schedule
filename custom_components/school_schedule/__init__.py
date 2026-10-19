@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
@@ -37,6 +38,19 @@ from .lesson_logic import slot_taken
 
 _LOGGER = logging.getLogger(__name__)
 
+# v2.7.5: security review — color must be strict hex, icon a valid icon
+# reference; both end up in card HTML (style / icon attributes).
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _hex_color(value: Any) -> str:
+    """Validate a #rrggbb hex color (v2.7.5 security review)."""
+    value = str(value).strip()
+    if not _HEX_COLOR_RE.match(value):
+        raise vol.Invalid(f"Invalid color {value!r} — expected hex format like #44739e")
+    return value
+
+
 ADD_LESSON_SCHEMA = vol.Schema({
     vol.Required("child_name"): cv.string,
     vol.Required("weekday"): vol.In(WEEKDAYS),
@@ -46,8 +60,8 @@ ADD_LESSON_SCHEMA = vol.Schema({
     vol.Optional("teacher", default=""): cv.string,
     vol.Required("start_time"): cv.string,
     vol.Required("end_time"): cv.string,
-    vol.Optional("color", default=DEFAULT_COLOR): cv.string,
-    vol.Optional("icon", default=DEFAULT_ICON): cv.string,
+    vol.Optional("color", default=DEFAULT_COLOR): _hex_color,
+    vol.Optional("icon", default=DEFAULT_ICON): cv.icon,
     vol.Optional("is_break", default=False): cv.boolean,
     vol.Optional("apply_to_all_days", default=False): cv.boolean,
 })
@@ -69,8 +83,8 @@ UPDATE_LESSON_SCHEMA = vol.Schema({
     vol.Optional("teacher"): cv.string,
     vol.Optional("start_time"): cv.string,
     vol.Optional("end_time"): cv.string,
-    vol.Optional("color"): cv.string,
-    vol.Optional("icon"): cv.string,
+    vol.Optional("color"): _hex_color,
+    vol.Optional("icon"): cv.icon,
     vol.Optional("is_break"): cv.boolean,
 })
 
@@ -304,12 +318,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not success:
                 raise HomeAssistantError(f"Lesson not found")
 
-        async def handle_get_schedule(call: ServiceCall) -> None:
-            """Handle get_schedule service call."""
+        async def handle_get_schedule(call: ServiceCall) -> ServiceResponse:
+            """Handle get_schedule service call (v2.7.5: returns the schedule)."""
             child_name = call.data["child_name"]
             coordinator = _find_coordinator(hass, child_name)
-            schedule = coordinator.get_schedule(call.data.get("weekday"))
-            _LOGGER.info("Schedule for %s: %s", child_name, schedule)
+            return {
+                "child_name": child_name,
+                "schedule": coordinator.get_schedule(call.data.get("weekday")),
+            }
 
         async def handle_set_federal_state(call: ServiceCall) -> None:
             """Handle set_federal_state service call."""
@@ -553,7 +569,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, SERVICE_ADD_LESSON, handle_add_lesson, schema=ADD_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_REMOVE_LESSON, handle_remove_lesson, schema=REMOVE_LESSON_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UPDATE_LESSON, handle_update_lesson, schema=UPDATE_LESSON_SCHEMA)
-        hass.services.async_register(DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_GET_SCHEDULE, handle_get_schedule, schema=GET_SCHEDULE_SCHEMA, supports_response=SupportsResponse.ONLY)
         hass.services.async_register(DOMAIN, SERVICE_SET_FEDERAL_STATE, handle_set_federal_state, schema=SET_FEDERAL_STATE_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_MARK_SICK_DAY, handle_mark_sick_day, schema=MARK_SICK_DAY_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_UNMARK_SICK_DAY, handle_unmark_sick_day, schema=UNMARK_SICK_DAY_SCHEMA)
