@@ -2514,6 +2514,9 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   // v2.7.0: escape helpers for user notes in HTML attributes / text
+  // v2.7.5 / v2.7.6: ALL user-controlled values now run through these
+  // helpers (HACS review #10564) — holiday names from mehr-schulferien.de,
+  // lesson subject/room/teacher, icon + color attributes, child switch names.
   _escHtml(text) {
     return String(text == null ? "" : text)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
