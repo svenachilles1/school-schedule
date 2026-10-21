@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.4
+ * School Schedule Card — Ultra Premium v2.7.7
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -1789,8 +1789,8 @@ class SchoolScheduleCard extends HTMLElement {
     const excModalHtml = this._renderExcModal();
 
     const cardClass = "ssc" + (this._editMode ? " ssc-editing" : "");
-    const heightStyle = this._cardHeight ? ' style="height:' + this._cardHeight + '"' : "";
-    const widthStyle = this._cardWidth ? ' style="max-width:' + this._cardWidth + ';margin:0 auto"' : "";
+    const heightStyle = this._cardHeight ? ' style="height:' + this._escAttr(this._cardHeight) + '"' : "";
+    const widthStyle = this._cardWidth ? ' style="max-width:' + this._escAttr(this._cardWidth) + ';margin:0 auto"' : "";
 
     this._shadow.innerHTML =
       '<style>' + this._styles() + '</style>' +
@@ -1804,7 +1804,7 @@ class SchoolScheduleCard extends HTMLElement {
             '</div>' +
             '<div class="title-text">' +
               '<div class="title-main">' + this._t("title") + '</div>' +
-              '<div class="title-sub">' + childName + '</div>' +
+              '<div class="title-sub">' + this._escHtml(childName) + '</div>' +
             '</div>' +
             actionsHtml +
           '</div>' +
@@ -2272,7 +2272,7 @@ class SchoolScheduleCard extends HTMLElement {
           '<div class="ssc-field-row">' +
             '<div class="ssc-field" style="flex:2">' +
               '<span class="ssc-field-label">' + this._t("subject") + (isBreakV ? '' : ' *') + '</span>' +
-              '<input class="ssc-input" type="text" id="ssc-subject" value="' + subj + '" placeholder="' + this._t("ph_subject") + '" />' +
+              '<input class="ssc-input" type="text" id="ssc-subject" value="' + this._escAttr(subj) + '" placeholder="' + this._t("ph_subject") + '" />' +
             '</div>' +
             '<div class="ssc-field" style="flex:0 0 80px;max-width:80px">' +
               '<span class="ssc-field-label">' + this._t("lesson_short") + '</span>' +
@@ -2282,36 +2282,36 @@ class SchoolScheduleCard extends HTMLElement {
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("start_time") + '</span>' +
-              '<input class="ssc-input" type="time" id="ssc-start" value="' + startT + '" />' +
+              '<input class="ssc-input" type="time" id="ssc-start" value="' + this._escAttr(startT) + '" />' +
             '</div>' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("end_time") + '</span>' +
-              '<input class="ssc-input" type="time" id="ssc-end" value="' + endT + '" />' +
+              '<input class="ssc-input" type="time" id="ssc-end" value="' + this._escAttr(endT) + '" />' +
             '</div>' +
           '</div>' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("room") + '</span>' +
-              '<input class="ssc-input" type="text" id="ssc-room" value="' + room + '" placeholder="' + this._t("ph_room") + '" />' +
+              '<input class="ssc-input" type="text" id="ssc-room" value="' + this._escAttr(room) + '" placeholder="' + this._t("ph_room") + '" />' +
             '</div>' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("teacher") + '</span>' +
-              '<input class="ssc-input" type="text" id="ssc-teacher" value="' + teacher + '" placeholder="' + this._t("ph_teacher") + '" />' +
+              '<input class="ssc-input" type="text" id="ssc-teacher" value="' + this._escAttr(teacher) + '" placeholder="' + this._t("ph_teacher") + '" />' +
             '</div>' +
           '</div>' +
           '<div class="ssc-field-row">' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("color") + '</span>' +
               '<div class="ssc-color-row">' +
-                '<input class="ssc-color-input" type="color" id="ssc-color" value="' + colorV + '" />' +
-                '<span class="ssc-color-hex" id="ssc-color-hex">' + colorV + '</span>' +
+                '<input class="ssc-color-input" type="color" id="ssc-color" value="' + this._escAttr(colorV) + '" />' +
+                '<span class="ssc-color-hex" id="ssc-color-hex">' + this._escHtml(colorV) + '</span>' +
               '</div>' +
             '</div>' +
             '<div class="ssc-field">' +
               '<span class="ssc-field-label">' + this._t("icon") + '</span>' +
               '<div class="ssc-icon-row">' +
-                '<input class="ssc-input" type="text" id="ssc-icon" value="' + iconV + '" placeholder="mdi:school" />' +
-                '<ha-icon id="ssc-icon-preview" icon="' + iconV + '" style="--mdc-icon-size:22px;color:' + colorV + '"></ha-icon>' +
+                '<input class="ssc-input" type="text" id="ssc-icon" value="' + this._escAttr(iconV) + '" placeholder="mdi:school" />' +
+                '<ha-icon id="ssc-icon-preview" icon="' + this._escAttr(iconV) + '" style="--mdc-icon-size:22px;color:' + this._escAttr(colorV) + '"></ha-icon>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -2514,7 +2514,7 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   // v2.7.0: escape helpers for user notes in HTML attributes / text
-  // v2.7.5 / v2.7.6: ALL user-controlled values now run through these
+  // v2.7.5 / v2.7.6 / v2.7.7: ALL user-controlled values now run through these
   // helpers (HACS review #10564) — holiday names from mehr-schulferien.de,
   // lesson subject/room/teacher, icon + color attributes, child switch names.
   _escHtml(text) {
@@ -3510,6 +3510,19 @@ if (!customElements.get("school-schedule-card")) {
 }
 
 class SchoolScheduleCardEditor extends HTMLElement {
+
+  // v2.7.7: the editor is a separate custom element and does NOT inherit
+  // the card's escape helpers - its own copies escape every card-config
+  // value before it lands in the editor HTML (HACS review #10564).
+  _escHtml(text) {
+    return String(text == null ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  _escAttr(text) {
+    return this._escHtml(text).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
   setConfig(config) {
     this._config = config || {};
     this._hass = null;
@@ -3526,17 +3539,17 @@ class SchoolScheduleCardEditor extends HTMLElement {
       <div class="ssc-editor">
         <div>
           <div class="ssc-editor-label" data-i18n="ed_child">Name des Kindes</div>
-          <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._config.child_name || ""}" placeholder="z.B. Max" />
+          <input class="ssc-editor-input" id="ssc-edit-child" type="text" value="${this._escAttr(this._config.child_name || "")}" placeholder="z.B. Max" />
           <div class="ssc-editor-hint" data-i18n="ed_child_hint">Muss mit dem Namen in der Integration übereinstimmen</div>
         </div>
         <div>
           <div class="ssc-editor-label" data-i18n="ed_height">Höhe der Karte</div>
-          <input class="ssc-editor-input" id="ssc-edit-height" type="text" value="${this._config.height || ""}" placeholder="z.B. 500px (leer = automatisch)" />
+          <input class="ssc-editor-input" id="ssc-edit-height" type="text" value="${this._escAttr(this._config.height || "")}" placeholder="z.B. 500px (leer = automatisch)" />
           <div class="ssc-editor-hint" data-i18n="ed_height_hint">Feste Höhe mit Scrollbar, z.B. 500px. Leer = wächst mit Inhalt</div>
         </div>
         <div>
           <div class="ssc-editor-label" data-i18n="ed_width">Maximale Breite</div>
-          <input class="ssc-editor-input" id="ssc-edit-width" type="text" value="${this._config.width || ""}" placeholder="z.B. 600px (leer = volle Breite)" />
+          <input class="ssc-editor-input" id="ssc-edit-width" type="text" value="${this._escAttr(this._config.width || "")}" placeholder="z.B. 600px (leer = volle Breite)" />
           <div class="ssc-editor-hint" data-i18n="ed_width_hint">Begrenzt die Kartenbreite, z.B. 600px. Leer = volle Breite</div>
         </div>
         <div>
@@ -3627,6 +3640,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.7.4",
+  description: "Stundenplan-Karte Ultra Premium v2.7.7",
   preview: false,
 });

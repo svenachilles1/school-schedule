@@ -25,6 +25,7 @@ from .const import (
 )
 from .holiday_logic import (
     next_event,
+    pauses_lessons,
     vacations_for_card,
 )
 from .lesson_logic import ensure_lesson_uids, lesson_uid_for, slot_taken
@@ -223,8 +224,12 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
 
         data: dict[str, Any] = {
             "child_name": self.child_name,
-            "today": self._get_annotated_lessons_for_date(today_date, today_weekday),
-            "tomorrow": self._get_annotated_lessons_for_date(tomorrow_date, tomorrow_weekday),
+            # v2.7.7 (vacation bugfix): school-free days (free exception >
+            # vacation > public holiday > weekend) PAUSE the plan - today and
+            # tomorrow report ZERO lessons instead of weekday template
+            # lessons for a date that does not take place.
+            "today": self._paused_or_annotated(today_h, today_date, today_weekday),
+            "tomorrow": self._paused_or_annotated(tomorrow_h, tomorrow_date, tomorrow_weekday),
             "today_weekday": today_weekday,
             "tomorrow_weekday": tomorrow_weekday,
             "today_date": today_date.isoformat(),
@@ -314,8 +319,19 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
 
         for day in WEEKDAYS:
             day_date = next_dates[day]
-            data[day] = annotate_with_exceptions(
-                self._get_lessons_for_day(day), self.cancellations, self.exceptions, day_date
+            # v2.7.7: the weekday sensors stand for the NEXT concrete
+            # occurrence of their weekday - a school-free occurrence pauses
+            # the plan, and every weekday sensor gets the same
+            # status/reason metadata as today/tomorrow (for the card).
+            day_h = effective_day_status(day_date, periods, self.exceptions)
+            data[f"{day}_status"] = day_h["status"]
+            data[f"{day}_reason"] = day_h["reason"]
+            data[day] = (
+                []
+                if pauses_lessons(day_h["status"])
+                else annotate_with_exceptions(
+                    self._get_lessons_for_day(day), self.cancellations, self.exceptions, day_date
+                )
             )
             data[f"{day}_date"] = day_date.isoformat()
 
@@ -352,6 +368,22 @@ class SchoolScheduleCoordinator(DataUpdateCoordinator):
         return annotate_with_exceptions(
             self._get_lessons_for_day(weekday), self.cancellations, self.exceptions, day
         )
+
+    def _paused_or_annotated(
+        self, day_status_result: dict[str, Any], day: date, weekday: str | None
+    ) -> list[dict[str, Any]]:
+        """v2.7.7: school-free days pause the day plan (empty lesson list).
+
+        The day sensors report ZERO lessons for concrete dates where school
+        does not take place (vacation, public holiday, free date exception,
+        weekend) - the plan is paused, not a weekday template. Callers pass
+        the effective day status so today/tomorrow and the weekday sensors
+        all go through the SAME status chain as the schulfrei binary sensor
+        (vacation > public holiday > weekend > school day).
+        """
+        if pauses_lessons(day_status_result["status"]):
+            return []
+        return self._get_annotated_lessons_for_date(day, weekday)
 
     async def add_lesson(self, lesson: dict[str, Any]) -> bool:
         """Add a new lesson to the schedule.

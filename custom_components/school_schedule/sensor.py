@@ -58,6 +58,19 @@ SENSOR_TYPES: list[tuple[str, str, str]] = [
     (SENSOR_FRIDAY, "Freitag", "mdi:calendar-text"),
 ]
 
+# v2.7.7: coordinator data key per sensor type - sensor types use the
+# German user-facing keys ("heute", "montag"), the coordinator data (and
+# its *_status/*_reason metadata) uses "today"/"tomorrow"/English weekdays.
+SENSOR_DATA_KEYS: dict[str, str] = {
+    SENSOR_TODAY: "today",
+    SENSOR_TOMORROW: "tomorrow",
+    SENSOR_MONDAY: "monday",
+    SENSOR_TUESDAY: "tuesday",
+    SENSOR_WEDNESDAY: "wednesday",
+    SENSOR_THURSDAY: "thursday",
+    SENSOR_FRIDAY: "friday",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -142,6 +155,16 @@ class SchoolScheduleSensor(SchoolScheduleEntity, SensorEntity):
         # v2.7.2: the concrete date this sensor currently stands for
         # (today for heute/morgen; next occurrence for weekday sensors)
         attrs["schedule_date"] = self._get_schedule_date()
+
+        # v2.7.7: day status + reason - "school_day", or why the plan is
+        # paused (vacation / public_holiday / date_exception / weekend).
+        # Paused days report 0 lessons (vacation bugfix).
+        data = self.coordinator.data or {}
+        day_key = SENSOR_DATA_KEYS.get(self._sensor_type, self._sensor_type)
+        if f"{day_key}_status" in data:
+            attrs["status"] = data[f"{day_key}_status"]
+        if f"{day_key}_reason" in data:
+            attrs["reason"] = data[f"{day_key}_reason"]
 
         # Find current/next lesson if today (v2.7.2: cancelled lessons
         # never qualify as current/next — the child is not there)
