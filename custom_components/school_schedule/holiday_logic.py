@@ -223,3 +223,21 @@ def vacations_for_card(periods: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return result
+
+# ─── Lesson pause on school-free days (v2.7.7) ───────────────────────────
+
+
+def pauses_lessons(status: str) -> bool:
+    """Whether a day with this status pauses the day's lesson plan (v2.7.7).
+
+    Backlog: "Wenn Ferien sind, sollen die Stunden pausiert werden" - the
+    day sensors stand for a CONCRETE date (today, tomorrow, next
+    occurrence of each weekday). When that date is school-free, the plan
+    does not take place and the sensors report 0 lessons with status and
+    reason attributes instead of weekday template lessons.
+
+    Same priority chain as day_status / effective_day_status: everything
+    that is not a school day (vacation > public holiday > free date
+    exception > weekend) pauses the plan.
+    """
+    return status != STATUS_SCHOOL_DAY

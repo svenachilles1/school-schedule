@@ -34,6 +34,7 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 - **Holiday caching (v2.5.0):** Holiday data is fetched once per 24h per federal state (shared across children), cached in the config entry, and survives restarts and network outages
 - **Federal state service (v2.5.0):** `set_federal_state` switches the state without reloading the integration
 - **Calendar entity per child (v2.5.4):** `calendar.stundenplan_<child>_kalender` — every lesson becomes a real calendar event on its weekday (repeating weekly), school-free days are skipped automatically (vacation, public holidays, weekends). Native calendar cards, automations ("lesson starts in X min"), and calendar-based triggers work out of the box. Read-only: lessons are managed via services/card
+- **Vacation pause (v2.7.7):** School-free days (vacation, public holiday, free date exception, weekend) pause the day plan — the day sensors report 0 lessons with `status` and `reason` attributes instead of weekday template lessons, fully consistent with the schulfrei binary sensor and the calendar
 - **Sick-day tracking (v2.6.0):** `sensor.stundenplan_<child>_fehlzeiten` per child — state = sick days in the current school year (Aug–Jul), attributes for sick_today/sick_tomorrow, current streak, attest thresholds, last sick day and recent history
 - **Sick-day services (v2.6.0):** `mark_sick_day` / `unmark_sick_day` — mark today (default), or any date: retroactive entries (yesterday) and pre-marking (tomorrow) both work, with an optional note ("Fieber", "Erkältung")
 - **Sick-day manager (v2.7.0):** full editable sick-day list in the modal — edit notes inline, delete entries (2-click confirm), today/planned badges, plus `mark_sick_range` (Von–Bis) and `update_sick_day` services
@@ -180,6 +181,8 @@ Each child gets 7 sensors:
 | `sensor.stundenplan_<child>_freitag` | Friday's lessons |
 
 The `heute` sensor also provides `current_lesson` and `next_lesson` attributes. Both include an `is_break` flag for break/pause lessons.
+
+**Vacation pause (v2.7.7):** School-free days (vacation, public holiday, free date exception or weekend) pause the day plan: each day sensor reports `0` lessons for its concrete date (today/tomorrow: that date; weekday sensors: the next occurrence of their weekday) and exposes `status` (`school_day`, `vacation`, `public_holiday`, `date_exception`, `weekend`) plus `reason` attributes. A `partial` date exception (half day) does not pause the day — it only derives lesson cancellations.
 
 ### Break/Pause lessons
 

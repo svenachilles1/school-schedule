@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "School Schedule",
+        "description": "Set up a new schedule for a child.",
+        "data": {
+          "child_name": "Name of the child"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "A schedule already exists for this child."
+    }
+  },
+  "options": {
+    "error": {
+      "subject_required": "Please provide a subject (optional for breaks).",
+      "slot_taken": "This lesson number is already taken for this weekday."
+    },
+    "step": {
+      "init": {
+        "title": "Manage schedule",
+        "description": "Choose an action for {child_name}'s schedule.",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Set the federal state for vacations and public holidays.",
+        "data": {
+          "federal_state": "Federal state"
+        }
+      },
+      "add_lesson": {
+        "title": "Add lesson",
+        "description": "Add a new lesson to the schedule.",
+        "data": {
+          "weekday": "Weekday",
+          "lesson_number": "Lesson number (1-12)",
+          "subject": "Subject",
+          "room": "Room",
+          "teacher": "Teacher",
+          "start_time": "Start time (HH:MM)",
+          "end_time": "End time (HH:MM)",
+          "color": "Color (hex code, e.g. #ff5733)",
+          "icon": "Icon (e.g. mdi:school)",
+          "is_break": "Mark as break",
+          "apply_to_all_days": "Apply to all days (Mon-Fri)"
+        }
+      },
+      "remove_lesson": {
+        "title": "Remove lesson",
+        "description": "Select the lesson to remove.",
+        "data": {
+          "lesson_index": "Select lesson"
+        }
+      },
+      "edit_lesson": {
+        "title": "Edit lesson",
+        "description": "Edit an existing lesson.",
+        "data": {
+          "lesson_index": "Lesson to edit",
+          "weekday": "Weekday",
+          "lesson_number": "Lesson number (1-12)",
+          "subject": "Subject",
+          "room": "Room",
+          "teacher": "Teacher",
+          "start_time": "Start time (HH:MM)",
+          "end_time": "End time (HH:MM)",
+          "color": "Color (hex code, e.g. #ff5733)",
+          "icon": "Icon (e.g. mdi:school)",
+          "is_break": "Mark as break"
+        }
+      }
+    }
+  },
+  "selector": {
+    "action": {
+      "options": {
+        "add": "Add lesson",
+        "edit": "Edit lesson",
+        "remove": "Remove lesson",
+        "settings": "Settings (federal state)",
+        "view": "View schedule"
+      }
+    }
+  },
+  "services": {
+    "add_lesson": {
+      "name": "Add lesson",
+      "description": "Adds a lesson to a child's schedule."
+    },
+    "remove_lesson": {
+      "name": "Remove lesson",
+      "description": "Removes a lesson from a child's schedule."
+    },
+    "update_lesson": {
+      "name": "Update lesson",
+      "description": "Updates the data of an existing lesson."
+    },
+    "get_schedule": {
+      "name": "Get schedule",
+      "description": "Returns the schedule for a given weekday."
+    },
+    "set_federal_state": {
+      "name": "Set federal state",
+      "description": "Sets the federal state used for vacation and public holiday calculation."
+    },
+    "mark_sick_day": {
+      "name": "Mark sick day",
+      "description": "Marks a day as a sick day (absence tracking). Defaults to today; backdating and pre-marking via date parameter are supported."
+    },
+    "unmark_sick_day": {
+      "name": "Remove sick day",
+      "description": "Removes the sick-day mark for a day. Defaults to today."
+    },
+    "mark_sick_range": {
+      "name": "Sick note (from-to)",
+      "description": "Marks all days from start to end date (inclusive) as sick. Both dates are required."
+    },
+    "update_sick_day": {
+      "name": "Edit sick day",
+      "description": "Updates the note of an existing sick day. The day must already be marked as sick."
+    },
+    "mark_lesson_cancelled": {
+      "name": "Cancel lesson",
+      "description": "Marks a single lesson on a concrete date as cancelled (teacher sick, field trip, substitute plan) - without changing the weekly schedule."
+    },
+    "unmark_lesson_cancelled": {
+      "name": "Undo cancellation",
+      "description": "Removes the cancellation mark of a single lesson - the lesson takes place again."
+    }
+  }
+}
