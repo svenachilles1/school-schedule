@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.7.7
+ * School Schedule Card — Ultra Premium v2.7.8
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -906,11 +906,11 @@ class SchoolScheduleCard extends HTMLElement {
     const todayStr = new Date().toISOString().slice(0, 10);
     const currentHoliday = this._isInHoliday(todayStr);
     if (currentHoliday) {
-      html += '<div class="holiday-current"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:28px;color:#ff9800"></ha-icon></div><div class="holiday-current-text"><div class="holiday-current-name">' + this._escHtml(currentHoliday.name) + '</div><div class="holiday-current-dates">' + this._formatDate(currentHoliday.starts_on) + " " + this._t("to") + " " + this._formatDate(currentHoliday.ends_on) + '</div></div></div>';
+      html += '<div class="holiday-current"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:28px;color:#ff9800"></ha-icon></div><div class="holiday-current-text"><div class="holiday-current-name">' + this._escHtml(currentHoliday.name) + '</div><div class="holiday-current-dates">' + this._escHtml(this._formatDate(currentHoliday.starts_on)) + " " + this._t("to") + " " + this._escHtml(this._formatDate(currentHoliday.ends_on)) + '</div></div></div>';
     }
     html += '<div class="holiday-list">';
     for (const h of this._holidayData) {
-      html += '<div class="holiday-item"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:18px;color:#ff9800;opacity:0.7"></ha-icon></div><div class="holiday-item-info"><div class="holiday-item-name">' + this._escHtml(h.name) + '</div><div class="holiday-item-dates">' + this._formatDate(h.starts_on) + " \u2013 " + this._formatDate(h.ends_on) + '</div></div></div>';
+      html += '<div class="holiday-item"><div class="holiday-item-icon"><ha-icon icon="mdi:beach" style="--mdc-icon-size:18px;color:#ff9800;opacity:0.7"></ha-icon></div><div class="holiday-item-info"><div class="holiday-item-name">' + this._escHtml(h.name) + '</div><div class="holiday-item-dates">' + this._escHtml(this._formatDate(h.starts_on)) + " \u2013 " + this._escHtml(this._formatDate(h.ends_on)) + '</div></div></div>';
     }
     html += '</div>';
     return html;
@@ -2514,7 +2514,7 @@ class SchoolScheduleCard extends HTMLElement {
   }
 
   // v2.7.0: escape helpers for user notes in HTML attributes / text
-  // v2.7.5 / v2.7.6 / v2.7.7: ALL user-controlled values now run through these
+  // v2.7.5 / v2.7.6 / v2.7.7 / v2.7.8: ALL user-controlled values now run through these
   // helpers (HACS review #10564) — holiday names from mehr-schulferien.de,
   // lesson subject/room/teacher, icon + color attributes, child switch names.
   _escHtml(text) {
@@ -3640,6 +3640,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.7.7",
+  description: "Stundenplan-Karte Ultra Premium v2.7.8",
   preview: false,
 });
