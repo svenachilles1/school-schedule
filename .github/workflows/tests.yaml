@@ -79,6 +79,7 @@ jobs:
       - name: Card XSS escape simulation (v2.7.7 form/editor values)
         run: |
           node tests/test_card_xss_v277.js
+          node tests/test_card_xss_v278.js
       - name: Card flow simulation (v2.7.2 cancellations)
         run: |
           node tests/card_flow_sim_v272.js
