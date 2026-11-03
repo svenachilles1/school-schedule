@@ -52,6 +52,9 @@ jobs:
                       print(f'  {f} OK')
           print('Python syntax valid ✅')
           "
+      - name: Icon existence check (MDI allowlist)
+        run: |
+          python3 tests/test_icons_exist.py
       - name: Unit tests (holiday logic)
         run: |
           python3 tests/test_holiday_logic.py
