@@ -18,7 +18,21 @@ A custom Home Assistant integration for managing school schedules with an Ultra 
 |---|---|
 | ![Holidays](screenshots/holidays-de.png) | ![Edit](screenshots/edit-en.png) |
 
-*All screenshots use anonymized demo data. The card auto-detects your HA theme colors.*
+**Daily progress, star gamification + confetti, sick-day tracking with the German attest rule, single-lesson cancellations and date exceptions:**
+
+| DAY DONE — golden progress, 4 stars + confetti (v2.5.6) | Attest warning banner — sick streak day 2 (v2.6.0) |
+|---|---|
+| ![Day done](screenshots/day-done-en.png) | ![Attest banner](screenshots/attest-banner-en.png) |
+
+| Sick-day manager — mark today/tomorrow, edit, delete (v2.6.0/v2.7.0) | Lesson cancellation — struck through, ENTFÄLLT badge, half-day banner (v2.7.2/v2.7.3) |
+|---|---|
+| ![Sick modal](screenshots/sick-modal-en.png) | ![Cancellation](screenshots/cancellation-en.png) |
+
+| Date exception manager — whole day off, half day, ranges (v2.7.3) | Child switcher — empty state for a child without lessons |
+|---|---|
+| ![Exceptions](screenshots/exceptions-en.png) | ![Child switcher](screenshots/child-max-en.png) |
+
+*All screenshots use anonymized demo data (generic names, subjects and times). The card auto-detects your HA theme colors.*
 
 ## Features
 
