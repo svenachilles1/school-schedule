@@ -1,5 +1,5 @@
 /**
- * School Schedule Card — Ultra Premium v2.8.0
+ * School Schedule Card — Ultra Premium v2.8.1
  * 3D Glassmorphism, animated aurora background
  * Features: Tagesansicht-Toggle, Inline-Verwaltung (Add/Edit/Delete), Pausen (is_break),
  *           Ferienkalender mit Zurueck-Button (Backend-Sync: Bundesland + Feriendaten aus der
@@ -3640,6 +3640,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "school-schedule-card",
   name: "School Schedule Card",
-  description: "Stundenplan-Karte Ultra Premium v2.8.0",
+  description: "Stundenplan-Karte Ultra Premium v2.8.1",
   preview: false,
 });

@@ -62,10 +62,10 @@ MON = date(2026, 9, 14)
 
 class TestParseHhmm(unittest.TestCase):
     def test_hhmm(self):
-        self.assertEqual(parse_hhmm("07:30"), time(7, 30))
+        self.assertEqual(parse_hhmm("08:00"), time(8, 0))
 
     def test_hhmmss_legacy(self):
-        self.assertEqual(parse_hhmm("07:30:00"), time(7, 30))
+        self.assertEqual(parse_hhmm("08:00:00"), time(8, 0))
 
     def test_invalid_returns_none(self):
         self.assertIsNone(parse_hhmm(None))
@@ -235,7 +235,7 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIsNone(events[0]["location"])
 
     def test_overlapping_boundary_event_included(self):
-        # Lesson Monday 07:30–08:15; window ends Monday 07:00 → no overlap
+        # Lesson Monday 08:00–08:45; window ends Monday 07:00 → no overlap
         lesson = _lesson("monday", 1, "Mathe", "08:00", "08:45")
         self.assertEqual(build_events([lesson], [], MON, MON, TZ), build_events([lesson], [], MON, MON, TZ))
         # datetime-level trim happens in calendar.py's async_get_events

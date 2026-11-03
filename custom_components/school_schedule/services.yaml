@@ -219,14 +219,14 @@ update_lesson:
       name: Startzeit
       description: Neue Startzeit (HH:MM).
       required: false
-      example: "09:00"
+      example: "08:00"
       selector:
         text:
     end_time:
       name: Endzeit
       description: Neue Endzeit (HH:MM).
       required: false
-      example: "09:45"
+      example: "08:45"
       selector:
         text:
     color:

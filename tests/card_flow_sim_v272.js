@@ -124,9 +124,9 @@ const card = new SchoolScheduleCard();
 // hass shim with realistic sensor attributes (cancellation data included)
 const todayIso = new Date().toISOString().slice(0, 10);
 const lessons = [
-  { lesson_uid: "tuesday-1", lesson_number: 1, subject: "Mathe", room: "101", teacher: "Müller", start_time: "07:30", end_time: "08:15", color: "#2196f3", icon: "mdi:math-compass", is_break: false },
-  { lesson_uid: "tuesday-2", lesson_number: 2, subject: "Deutsch", room: "102", teacher: "Schneider", start_time: "08:15", end_time: "09:00", color: "#4caf50", icon: "mdi:book-open", is_break: false },
-  { lesson_uid: "tuesday-3", lesson_number: 3, subject: "Sport", room: "Halle", teacher: "Schmidt", start_time: "09:00", end_time: "09:45", color: "#ff9800", icon: "mdi:run", is_break: false },
+  { lesson_uid: "tuesday-1", lesson_number: 1, subject: "Mathe", room: "101", teacher: "Müller", start_time: "08:00", end_time: "08:45", color: "#2196f3", icon: "mdi:math-compass", is_break: false },
+  { lesson_uid: "tuesday-2", lesson_number: 2, subject: "Deutsch", room: "102", teacher: "Schneider", start_time: "08:45", end_time: "09:30", color: "#4caf50", icon: "mdi:book-open", is_break: false },
+  { lesson_uid: "tuesday-3", lesson_number: 3, subject: "Sport", room: "Halle", teacher: "Schmidt", start_time: "09:30", end_time: "10:15", color: "#ff9800", icon: "mdi:run", is_break: false },
 ];
 const annotated = lessons.map((l) => ({ ...l, cancelled: l.lesson_number === 2, cancelled_note: l.lesson_number === 2 ? "Lehrer krank" : "" }));
 
