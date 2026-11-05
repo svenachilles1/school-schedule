@@ -2,6 +2,8 @@
 
 A custom Home Assistant integration for managing school schedules with an Ultra Premium Lovelace card.
 
+**English** | [Deutsch](README_DE.md)
+
 ![School Schedule Card](brand/icon.png)
 
 ## Screenshots
